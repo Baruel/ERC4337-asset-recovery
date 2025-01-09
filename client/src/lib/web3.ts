@@ -230,12 +230,16 @@ export function useSendTransaction() {
         });
 
         // Fetch the current nonce from the smart wallet contract
-        const nonce = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress}&chainId=${network.id}`).then(res => res.json());
+        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress}&chainId=${network.id}`);
+        const nonceData = await nonceResponse.text();
+        const nonce = BigInt(nonceData.trim());
+
+        console.log('Fetched nonce:', nonce.toString());
 
         // Create UserOperation with increased gas values
         const userOp = {
           sender: smartWalletAddress,
-          nonce: BigInt(nonce),
+          nonce,
           initCode: '0x',
           callData,
           callGasLimit: BigInt(500000), // Increased from 100,000
@@ -246,11 +250,24 @@ export function useSendTransaction() {
           paymasterAndData: '0x'
         };
 
+        console.log('Created user operation:', {
+          ...userOp,
+          nonce: userOp.nonce.toString(),
+          callGasLimit: userOp.callGasLimit.toString(),
+          verificationGasLimit: userOp.verificationGasLimit.toString(),
+          preVerificationGas: userOp.preVerificationGas.toString(),
+          maxFeePerGas: userOp.maxFeePerGas.toString(),
+          maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(),
+        });
+
         // Get the entry point address for the current network
-        const entryPoint = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`).then(res => res.json());
+        const entryPointResponse = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`);
+        const entryPoint = await entryPointResponse.text();
+
+        console.log('Using entry point:', entryPoint);
 
         // Sign the user operation with chain ID and entry point
-        const signature = await signUserOp(userOp, network.id, entryPoint, privateKey);
+        const signature = await signUserOp(userOp, network.id, entryPoint.trim(), privateKey);
         const signedUserOp = { ...userOp, signature };
 
         // Serialize BigInt values before sending to API
