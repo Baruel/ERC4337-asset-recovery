@@ -4,7 +4,7 @@ import { createPublicClient, http } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'viem/chains';
 import { createBundlerProvider } from './bundler/providers';
 
-// Network configurations
+// Network configurations with RPC URLs
 const NETWORKS = {
   1: mainnet,
   137: polygon,
@@ -51,6 +51,26 @@ const FACTORY_ABI = [{
   stateMutability: 'view',
   type: 'function'
 }] as const;
+
+// Full ERC20 ABI for better error handling
+const ERC20_ABI = [
+  {
+    constant: true,
+    inputs: [{ name: '_owner', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: 'balance', type: 'uint256' }],
+    type: 'function',
+    stateMutability: 'view'
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: 'decimals',
+    outputs: [{ name: '', type: 'uint8' }],
+    type: 'function',
+    stateMutability: 'view'
+  }
+] as const;
 
 export function registerRoutes(app: Express): Server {
   // Add endpoint to compute smart wallet address
@@ -124,13 +144,14 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // API routes for token balances
+  // API routes for token balances with improved error handling and logging
   app.post('/api/tokens/balance', async (req, res) => {
     try {
       const { tokenAddress, userAddress, chainId } = req.body;
 
       console.log(`Fetching balance for token ${tokenAddress} on chain ${chainId} for user ${userAddress}`);
 
+      // Special logging for Polygon USDC
       if (chainId === 137 && tokenAddress === '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359') {
         console.log('Fetching Polygon USDC balance');
       }
@@ -142,9 +163,25 @@ export function registerRoutes(app: Express): Server {
 
       const client = createPublicClient({
         chain,
-        transport: http()
+        transport: http({
+          retryCount: 3,
+          timeout: 30000
+        })
       });
 
+      // First get token decimals
+      try {
+        const decimals = await client.readContract({
+          address: tokenAddress as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'decimals'
+        });
+        console.log(`Token decimals for ${tokenAddress}: ${decimals}`);
+      } catch (error) {
+        console.warn(`Failed to fetch decimals for token ${tokenAddress}:`, error);
+      }
+
+      // Then get balance with more detailed logging
       const balance = await client.readContract({
         address: tokenAddress as `0x${string}`,
         abi: ERC20_ABI,
@@ -194,11 +231,3 @@ export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   return httpServer;
 }
-
-const ERC20_ABI = [{
-  name: 'balanceOf',
-  type: 'function',
-  stateMutability: 'view',
-  inputs: [{ name: 'account', type: 'address' }],
-  outputs: [{ name: 'balance', type: 'uint256' }]
-}] as const;
