@@ -111,6 +111,25 @@ function serializeBigIntValues(obj: any): any {
   return obj;
 }
 
+// Enhanced error handling helper
+function formatServerError(error: any, context: Record<string, any> = {}) {
+  const errorResponse = {
+    error: 'Failed to send UserOperation',
+    message: error instanceof Error ? error.message : 'Unknown error',
+    details: error instanceof Error ? error.stack : JSON.stringify(error),
+    timestamp: new Date().toISOString(),
+    context
+  };
+
+  // Log detailed error information for debugging
+  console.error('Error details:', {
+    ...errorResponse,
+    originalError: error
+  });
+
+  return errorResponse;
+}
+
 export function registerRoutes(app: Express): Server {
   // Add endpoint to compute smart wallet address
   app.post('/api/smart-wallet/compute-address', async (req, res) => {
@@ -246,7 +265,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Updated send-user-operation endpoint with proper serialization
+  // Updated send-user-operation endpoint with enhanced error handling
   app.post('/api/send-user-operation', async (req, res) => {
     try {
       const { userOp, network } = req.body;
@@ -269,16 +288,18 @@ export function registerRoutes(app: Express): Server {
       res.json(serializedResult);
     } catch (error) {
       console.error('Error sending UserOperation:', error);
-      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      let errorDetails = error instanceof Error ? error.toString() : JSON.stringify(error);
 
-      res.status(500).json({
-        error: 'Failed to send UserOperation',
-        message: errorMessage,
-        details: errorDetails,
-        timestamp: new Date().toISOString(),
-        path: '/api/send-user-operation'
-      });
+      // Get the error context
+      const context = {
+        network,
+        entryPoint: ENTRY_POINT_ADDRESSES[network as keyof typeof ENTRY_POINT_ADDRESSES],
+        userOp: serializeBigIntValues(userOp),
+        path: '/api/send-user-operation',
+        timestamp: new Date().toISOString()
+      };
+
+      // Format and send detailed error response
+      res.status(500).json(formatServerError(error, context));
     }
   });
 

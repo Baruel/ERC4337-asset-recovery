@@ -165,6 +165,59 @@ async function signUserOp(userOp: any, chainId: number, entryPoint: string, priv
   return signMessage(userOpHash.slice(2), privateKey);
 }
 
+// Helper to parse error stack trace and extract file information
+function parseErrorStack(error: Error): { file: string; line: number; column?: number }[] {
+  const stack = error.stack || '';
+  const stackLines = stack.split('\n').slice(1); // Skip first line (error message)
+
+  return stackLines
+    .map(line => {
+      const match = line.match(/at\s+(?:\w+\s+)?\(?(.+):(\d+):(\d+)\)?/);
+      if (match) {
+        const [_, file, line, column] = match;
+        return {
+          file: file.replace(window.location.origin, ''),
+          line: parseInt(line, 10),
+          column: parseInt(column, 10)
+        };
+      }
+      return null;
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+// Enhanced error handling for transaction errors
+function formatTransactionError(error: any, userOp?: any, network?: any) {
+  const errorObj: any = {
+    message: error.message || 'Unknown error occurred',
+    userOperation: userOp,
+    network,
+    endpoint: '/api/send-user-operation',
+    rawError: error.toString()
+  };
+
+  // Add stack trace if available
+  if (error instanceof Error) {
+    errorObj.stackTrace = error.stack;
+    errorObj.fileInfo = parseErrorStack(error);
+  }
+
+  // Parse bundler error response if available
+  if (error.rawError) {
+    try {
+      const parsedError = JSON.parse(error.rawError);
+      errorObj.message = parsedError.message || parsedError.error?.message || error.message;
+      if (parsedError.details) {
+        errorObj.rawError = parsedError.details;
+      }
+    } catch (e) {
+      console.warn('Failed to parse bundler error:', e);
+    }
+  }
+
+  return errorObj;
+}
+
 // Hook for sending transactions
 export function useSendTransaction() {
   const { privateKey, address, smartWalletAddress } = useWalletStore();
@@ -240,13 +293,18 @@ export function useSendTransaction() {
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Failed to send transaction: ${errorText}`);
+          const error = new Error(`Failed to send transaction: ${errorText}`);
+          (error as any).rawError = errorText;
+          throw error;
         }
 
         return await response.json();
       } catch (error) {
         console.error('Transaction error:', error);
-        throw error;
+        throw formatTransactionError(error, userOp, {
+          name: network?.name,
+          chainId: network?.id
+        });
       }
     }
   };

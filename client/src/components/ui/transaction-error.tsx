@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Copy, XCircle, CheckCircle2 } from "lucide-react";
+import { Copy, XCircle, CheckCircle2, FileCode } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,6 +31,12 @@ interface TransactionErrorProps {
     };
     endpoint?: string;
     rawError?: string;
+    stackTrace?: string;
+    fileInfo?: {
+      file: string;
+      line: number;
+      column?: number;
+    }[];
   };
 }
 
@@ -83,6 +89,19 @@ export function TransactionError({ open, onClose, error }: TransactionErrorProps
                     <p className="text-destructive font-medium">{error.message}</p>
                     {renderCopyButton(error.message, 'error')}
                   </div>
+                  {error.fileInfo && error.fileInfo.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">Error Location:</p>
+                      {error.fileInfo.map((loc, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <FileCode className="h-4 w-4" />
+                          <span className="font-mono">
+                            {loc.file}:{loc.line}{loc.column ? `:${loc.column}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </AccordionContent>
               </AccordionItem>
 
@@ -129,6 +148,22 @@ export function TransactionError({ open, onClose, error }: TransactionErrorProps
                           {JSON.stringify(error.userOperation, null, 2)}
                         </pre>
                         {renderCopyButton(JSON.stringify(error.userOperation, null, 2), 'userOp')}
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+
+              {error.stackTrace && (
+                <AccordionItem value="stack">
+                  <AccordionTrigger>Stack Trace</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start">
+                        <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs font-mono w-full whitespace-pre-wrap">
+                          {error.stackTrace}
+                        </pre>
+                        {renderCopyButton(error.stackTrace, 'stackTrace')}
                       </div>
                     </div>
                   </AccordionContent>
