@@ -26,10 +26,67 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
+// Simple Account Factory addresses
+const FACTORY_ADDRESSES = {
+  1: '0x9406Cc6185a346906296840746125a0E44976454',
+  137: '0x9406Cc6185a346906296840746125a0E44976454',
+  42161: '0x9406Cc6185a346906296840746125a0E44976454',
+  10: '0x9406Cc6185a346906296840746125a0E44976454',
+  8453: '0x9406Cc6185a346906296840746125a0E44976454',
+  43114: '0x9406Cc6185a346906296840746125a0E44976454',
+  56: '0x9406Cc6185a346906296840746125a0E44976454'
+};
+
 // Initialize the bundler provider
 const bundlerProvider = createBundlerProvider();
 
+// Factory ABI for computing counterfactual address
+const FACTORY_ABI = [{
+  inputs: [
+    { name: 'owner', type: 'address' },
+    { name: 'salt', type: 'uint256' }
+  ],
+  name: 'getAddress',
+  outputs: [{ name: 'ret', type: 'address' }],
+  stateMutability: 'view',
+  type: 'function'
+}] as const;
+
 export function registerRoutes(app: Express): Server {
+  // Add endpoint to compute smart wallet address
+  app.post('/api/smart-wallet/compute-address', async (req, res) => {
+    try {
+      const { ownerAddress, chainId, salt } = req.body;
+
+      const chain = NETWORKS[chainId as keyof typeof NETWORKS];
+      if (!chain) {
+        return res.status(400).json({ error: 'Unsupported chain ID' });
+      }
+
+      const factoryAddress = FACTORY_ADDRESSES[chainId as keyof typeof FACTORY_ADDRESSES];
+      if (!factoryAddress) {
+        return res.status(400).json({ error: 'No factory address for this chain' });
+      }
+
+      const client = createPublicClient({
+        chain,
+        transport: http()
+      });
+
+      const address = await client.readContract({
+        address: factoryAddress as `0x${string}`,
+        abi: FACTORY_ABI,
+        functionName: 'getAddress',
+        args: [ownerAddress as `0x${string}`, BigInt(salt)]
+      });
+
+      res.json({ address });
+    } catch (error) {
+      console.error('Error computing smart wallet address:', error);
+      res.status(500).json({ error: 'Failed to compute smart wallet address' });
+    }
+  });
+
   // Add endpoints for smart wallet nonce and entry point
   app.get('/api/smart-wallet/nonce', async (req, res) => {
     try {
@@ -67,27 +124,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // API routes for token prices and transaction history
-  app.get('/api/tokens/prices', async (req, res) => {
-    try {
-      // Implement token price fetching
-      res.json([]);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch token prices' });
-    }
-  });
-
-  app.get('/api/transactions/:address', async (req, res) => {
-    try {
-      const { address } = req.params;
-      // Implement transaction history fetching
-      res.json([]);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch transactions' });
-    }
-  });
-
-  // Token balance endpoint
+  // API routes for token balances
   app.post('/api/tokens/balance', async (req, res) => {
     try {
       const { tokenAddress, userAddress, chainId } = req.body;

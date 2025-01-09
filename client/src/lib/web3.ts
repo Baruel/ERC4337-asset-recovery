@@ -3,25 +3,7 @@ import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagm
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
-
-// Constants for Account Abstraction
-const SIMPLE_ACCOUNT_FACTORY = {
-  1: '0x9406Cc6185a346906296840746125a0E44976454',
-  137: '0x9406Cc6185a346906296840746125a0E44976454',
-  42161: '0x9406Cc6185a346906296840746125a0E44976454',
-  10: '0x9406Cc6185a346906296840746125a0E44976454',
-  8453: '0x9406Cc6185a346906296840746125a0E44976454',
-  43114: '0x9406Cc6185a346906296840746125a0E44976454',
-  56: '0x9406Cc6185a346906296840746125a0E44976454'
-};
-
-interface WalletState {
-  address: string | null;
-  smartWalletAddress: string | null;
-  privateKey: string | null;
-  connect: (privateKey: string, smartWalletAddress: string) => Promise<void>;
-  disconnect: () => void;
-}
+import { computeSmartWalletAddress, generateInitCode, signMessage } from './smartWallet';
 
 // Define supported networks
 export const SUPPORTED_NETWORKS = [
@@ -34,14 +16,26 @@ export const SUPPORTED_NETWORKS = [
   bsc
 ] as const;
 
+interface WalletState {
+  address: string | null;
+  smartWalletAddress: string | null;
+  privateKey: string | null;
+  connect: (privateKey: string) => Promise<void>;
+  disconnect: () => void;
+}
+
 // Create wallet store
 const useWalletStore = create<WalletState>((set) => ({
   address: null,
   smartWalletAddress: null,
   privateKey: null,
-  connect: async (privateKey: string, smartWalletAddress: string) => {
+  connect: async (privateKey: string) => {
     try {
       const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+      // For the first network (e.g., Ethereum mainnet), compute the smart wallet address
+      const smartWalletAddress = await computeSmartWalletAddress(account.address, SUPPORTED_NETWORKS[0].id);
+
       set({
         address: account.address,
         smartWalletAddress,
@@ -125,7 +119,6 @@ function serializeUserOp(userOp: any) {
     signature: formatHex(userOp.signature || '0x')
   };
 
-  // Validate all fields are properly formatted
   Object.entries(serialized).forEach(([key, value]) => {
     if (!value.startsWith('0x')) {
       throw new Error(`Invalid ${key}: must start with 0x`);
@@ -171,53 +164,7 @@ async function signUserOp(userOp: any, chainId: number, entryPoint: string, priv
   const userOpHash = keccak256(message);
   console.log('Generated user operation hash:', userOpHash);
 
-  // Sign the hash
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
-  const client = createWalletClient({
-    account,
-    chain: mainnet,
-    transport: http()
-  });
-
-  const signature = await client.signMessage({ message: { raw: toBytes(userOpHash) } });
-  console.log('Generated signature:', signature);
-
-  return signature;
-}
-
-// Function to generate initCode for new smart wallet deployment
-async function generateInitCode(ownerAddress: string, chainId: number): Promise<string> {
-  const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
-  if (!factoryAddress) {
-    throw new Error(`No factory address for chain ID ${chainId}`);
-  }
-
-  // Encode the creation code for the smart wallet
-  const initCode = encodeFunctionData({
-    abi: [{
-      name: 'createAccount',
-      type: 'function',
-      stateMutability: 'nonpayable',
-      inputs: [
-        { name: 'owner', type: 'address' },
-        { name: 'salt', type: 'uint256' }
-      ],
-      outputs: [{ type: 'address' }]
-    }],
-    functionName: 'createAccount',
-    args: [ownerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
-  });
-
-  // Ensure factoryAddress has '0x' prefix and proper length
-  const formattedFactoryAddress = factoryAddress.toLowerCase().startsWith('0x')
-    ? factoryAddress.toLowerCase()
-    : `0x${factoryAddress}`;
-
-  if (formattedFactoryAddress.length !== 42) {
-    throw new Error(`Invalid factory address length: ${formattedFactoryAddress}`);
-  }
-
-  return formattedFactoryAddress + initCode.slice(2); // Concatenate factory address with encoded function data
+  return signMessage(userOpHash.slice(2), privateKey);
 }
 
 // Hook for sending transactions
