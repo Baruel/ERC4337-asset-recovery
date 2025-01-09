@@ -49,6 +49,10 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`Fetching balance for token ${tokenAddress} on chain ${chainId} for user ${userAddress}`);
 
+      if (chainId === 137 && tokenAddress === '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359') {
+        console.log('Fetching Polygon USDC balance');
+      }
+
       const chain = NETWORKS[chainId as keyof typeof NETWORKS];
       if (!chain) {
         return res.status(400).json({ error: 'Unsupported chain ID' });
@@ -66,7 +70,7 @@ export function registerRoutes(app: Express): Server {
         args: [userAddress as `0x${string}`]
       });
 
-      console.log(`Balance result for ${tokenAddress} on ${chain.name}: ${balance.toString()}`);
+      console.log(`Raw balance result for ${tokenAddress} on ${chain.name}: ${balance.toString()}`);
 
       res.json({ balance: balance.toString() });
     } catch (error) {
