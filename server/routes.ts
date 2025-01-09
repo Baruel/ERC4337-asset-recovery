@@ -11,10 +11,10 @@ const NETWORKS = {
     ...polygon,
     rpcUrls: {
       default: {
-        http: ['https://polygon-rpc.com']
+        http: ['https://polygon.llamarpc.com']
       },
       public: {
-        http: ['https://polygon-rpc.com']
+        http: ['https://polygon.llamarpc.com']
       }
     }
   },
