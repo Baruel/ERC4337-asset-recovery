@@ -53,6 +53,7 @@ export function useTokenBalances(address: string) {
           const networkBalances = await Promise.all(
             networkTokens.map(async (token) => {
               try {
+                console.log(`Requesting balance for ${token.symbol} on ${network.name} (Chain ID: ${network.id})`);
                 const result = await fetch('/api/tokens/balance', {
                   method: 'POST',
                   headers: {
@@ -66,6 +67,7 @@ export function useTokenBalances(address: string) {
                 });
 
                 const data = await result.json();
+                console.log(`Received balance for ${token.symbol} on ${network.name}: ${data.balance}`);
                 return {
                   ...token,
                   balance: formatUnits(BigInt(data.balance), token.decimals),

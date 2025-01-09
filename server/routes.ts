@@ -47,6 +47,8 @@ export function registerRoutes(app: Express): Server {
     try {
       const { tokenAddress, userAddress, chainId } = req.body;
 
+      console.log(`Fetching balance for token ${tokenAddress} on chain ${chainId} for user ${userAddress}`);
+
       const chain = NETWORKS[chainId as keyof typeof NETWORKS];
       if (!chain) {
         return res.status(400).json({ error: 'Unsupported chain ID' });
@@ -63,6 +65,8 @@ export function registerRoutes(app: Express): Server {
         functionName: 'balanceOf',
         args: [userAddress as `0x${string}`]
       });
+
+      console.log(`Balance result for ${tokenAddress} on ${chain.name}: ${balance.toString()}`);
 
       res.json({ balance: balance.toString() });
     } catch (error) {
