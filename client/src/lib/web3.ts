@@ -232,7 +232,7 @@ function formatTransactionError(error: any, context: Record<string, any> = {}) {
 // Add new hooks for managing bundler configuration and paymaster settings
 export function useBundlerConfig() {
   return useMutation({
-    mutationFn: async (config: { type?: string; apiKey: string; paymasterUrl?: string }) => {
+    mutationFn: async (config: { type: string; apiKey: string; paymasterUrl?: string }) => {
       const response = await fetch('/api/config/bundler', {
         method: 'POST',
         headers: {
@@ -250,7 +250,6 @@ export function useBundlerConfig() {
     },
   });
 }
-
 
 // Updated sendTransaction hook with explicit paymaster handling
 export function useSendTransaction() {
@@ -406,8 +405,8 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
       return { success: false, error: 'Transaction receipt not found' };
     }
 
-    // Verify if the transaction was successful
-    if (receipt.status === 'success' || receipt.status === 1) {
+    // Fix the status comparison by explicitly checking both cases
+    if (receipt.status === 'success' || receipt.status === 1n || receipt.status === 1) {
       return { success: true };
     } else {
       return { success: false, error: 'Transaction failed on-chain' };
