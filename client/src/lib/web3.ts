@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData } from 'viem';
+import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData, keccak256, toBytes } from 'viem';
 
 interface WalletState {
   address: string | null;
@@ -11,43 +11,6 @@ interface WalletState {
   connect: (privateKey: string, smartWalletAddress: string) => Promise<void>;
   disconnect: () => void;
 }
-
-// ERC-4337 EntryPoint ABI for handling UserOperation
-const ENTRY_POINT_ABI = [{
-  name: 'handleOps',
-  type: 'function',
-  stateMutability: 'payable',
-  inputs: [{
-    name: 'ops',
-    type: 'tuple[]',
-    components: [
-      { name: 'sender', type: 'address' },
-      { name: 'nonce', type: 'uint256' },
-      { name: 'initCode', type: 'bytes' },
-      { name: 'callData', type: 'bytes' },
-      { name: 'callGasLimit', type: 'uint256' },
-      { name: 'verificationGasLimit', type: 'uint256' },
-      { name: 'preVerificationGas', type: 'uint256' },
-      { name: 'maxFeePerGas', type: 'uint256' },
-      { name: 'maxPriorityFeePerGas', type: 'uint256' },
-      { name: 'paymasterAndData', type: 'bytes' },
-      { name: 'signature', type: 'bytes' }
-    ]
-  }],
-  outputs: [{ type: 'uint256[]' }]
-}] as const;
-
-// ERC-20 transfer ABI
-const ERC20_TRANSFER_ABI = [{
-  name: 'transfer',
-  type: 'function',
-  stateMutability: 'nonpayable',
-  inputs: [
-    { name: 'recipient', type: 'address' },
-    { name: 'amount', type: 'uint256' }
-  ],
-  outputs: [{ type: 'bool' }]
-}] as const;
 
 // Define supported networks
 export const SUPPORTED_NETWORKS = [
@@ -68,16 +31,6 @@ const useWalletStore = create<WalletState>((set) => ({
   connect: async (privateKey: string, smartWalletAddress: string) => {
     try {
       const account = privateKeyToAccount(privateKey as `0x${string}`);
-
-      // Create wallet clients for each network
-      const walletClients = SUPPORTED_NETWORKS.map(network =>
-        createWalletClient({
-          account,
-          chain: network,
-          transport: http()
-        })
-      );
-
       set({
         address: account.address,
         smartWalletAddress,
@@ -137,6 +90,42 @@ export function useTransactionHistory(address: string) {
 export function useSendTransaction() {
   const { privateKey, smartWalletAddress } = useWalletStore();
 
+  const signUserOp = async (userOp: any, entryPoint: string) => {
+    if (!privateKey) throw new Error('No private key available');
+
+    // Hash the user operation
+    const encodedUserOp = encodeAbiParameters(
+      parseAbiParameters('address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData'),
+      [{
+        sender: userOp.sender,
+        nonce: userOp.nonce,
+        initCode: userOp.initCode,
+        callData: userOp.callData,
+        callGasLimit: userOp.callGasLimit,
+        verificationGasLimit: userOp.verificationGasLimit,
+        preVerificationGas: userOp.preVerificationGas,
+        maxFeePerGas: userOp.maxFeePerGas,
+        maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
+        paymasterAndData: userOp.paymasterAndData
+      }]
+    );
+
+    const userOpHash = keccak256(encodedUserOp);
+    console.log('User operation hash:', userOpHash);
+
+    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    const client = createWalletClient({
+      account,
+      chain: mainnet,
+      transport: http()
+    });
+
+    const signature = await client.signMessage({ message: { raw: toBytes(userOpHash) } });
+    console.log('Generated signature:', signature);
+
+    return signature;
+  };
+
   return {
     mutateAsync: async (values: {
       recipient: string;
@@ -157,7 +146,16 @@ export function useSendTransaction() {
 
         // Create transfer calldata
         const callData = encodeFunctionData({
-          abi: ERC20_TRANSFER_ABI,
+          abi: [{
+            name: 'transfer',
+            type: 'function',
+            stateMutability: 'nonpayable',
+            inputs: [
+              { name: 'recipient', type: 'address' },
+              { name: 'amount', type: 'uint256' }
+            ],
+            outputs: [{ type: 'bool' }]
+          }],
           functionName: 'transfer',
           args: [values.recipient as `0x${string}`, BigInt(values.amount)]
         });
@@ -173,16 +171,19 @@ export function useSendTransaction() {
           preVerificationGas: BigInt(21000),
           maxFeePerGas: BigInt(1000000000),
           maxPriorityFeePerGas: BigInt(1000000000),
-          paymasterAndData: '0x',
-          signature: '0x' // Will be filled after signing
+          paymasterAndData: '0x'
         };
 
-        console.log('Sending UserOperation:', {
+        console.log('Created user operation:', userOp);
+
+        // Sign the user operation
+        const entryPoint = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789';
+        const signature = await signUserOp(userOp, entryPoint);
+        userOp.signature = signature;
+
+        console.log('Sending signed UserOperation:', {
           network: network.name,
           chainId: network.id,
-          recipient: values.recipient,
-          amount: values.amount,
-          token: values.token,
           userOp
         });
 
@@ -198,13 +199,20 @@ export function useSendTransaction() {
           }),
         });
 
+        const responseText = await response.text();
+        console.log('Raw bundler response:', responseText);
+
         if (!response.ok) {
-          const error = await response.json();
-          console.error('Transaction failed:', error);
-          throw new Error(error.details || 'Failed to send transaction');
+          let errorDetails;
+          try {
+            errorDetails = JSON.parse(responseText).details;
+          } catch (e) {
+            errorDetails = responseText;
+          }
+          throw new Error(errorDetails || 'Failed to send transaction');
         }
 
-        const result = await response.json();
+        const result = JSON.parse(responseText);
         console.log('Transaction result:', result);
         return result;
       } catch (error) {
