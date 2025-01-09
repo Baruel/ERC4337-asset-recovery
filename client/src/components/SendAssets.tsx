@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTokenBalances } from "@/lib/tokens";
-import { useSendTransaction } from "@/lib/web3";
+import { useSendTransaction, verifyUserOperation } from "@/lib/web3";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_NETWORKS } from "@/lib/web3";
 import { TransactionErrorDisplay } from "@/components/ui/transaction-error-display";
@@ -59,6 +59,7 @@ export default function SendAssets({ address }: SendAssetsProps) {
   const { mutateAsync: sendTransaction, isLoading } = useSendTransaction();
   const [error, setError] = useState<TransactionError | null>(null);
   const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Load custom tokens from localStorage
   useEffect(() => {
@@ -94,16 +95,28 @@ export default function SendAssets({ address }: SendAssetsProps) {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       setError(null);
+      setIsVerifying(true);
+
       const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
       if (!network) {
         throw new Error('Network not found');
       }
 
-      await sendTransaction(values);
+      // Send the transaction
+      const txResponse = await sendTransaction(values);
+
+      // Verify the transaction deployment
+      const verificationResult = await verifyUserOperation(txResponse, network.id);
+
+      if (!verificationResult.success) {
+        throw new Error(verificationResult.error || 'Transaction verification failed');
+      }
+
       toast({
         title: "Transaction Sent",
-        description: "Your transaction has been submitted to the network.",
+        description: "Your transaction has been submitted and verified on the network.",
       });
+
       form.reset();
     } catch (error: any) {
       const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
@@ -116,11 +129,13 @@ export default function SendAssets({ address }: SendAssetsProps) {
         } : undefined,
         endpoint: '/api/send-user-operation',
         userOperation: error.userOperation,
-        rawError: error.rawError
+        rawError: error.toString()
       };
 
       setError(errorDetails);
       console.error('Transaction Error:', errorDetails);
+    } finally {
+      setIsVerifying(false);
     }
   }
 
@@ -221,9 +236,9 @@ export default function SendAssets({ address }: SendAssetsProps) {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={isLoading}
+            disabled={isLoading || isVerifying}
           >
-            {isLoading ? "Sending..." : "Send"}
+            {isVerifying ? "Verifying..." : isLoading ? "Sending..." : "Send"}
           </Button>
         </form>
       </Form>

@@ -4,6 +4,9 @@ import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
 import { computeSmartWalletAddress, generateInitCode, signMessage } from './smartWallet';
+import { useQuery } from '@tanstack/react-query';
+import { verifyDeployment } from './deployment';
+import { deploySmartWallet } from './smartWallet';
 
 // Define supported networks
 export const SUPPORTED_NETWORKS = [
@@ -328,5 +331,50 @@ function parseBundlerError(errorText: string): string {
     return errorText;
   } catch (e) {
     return errorText;
+  }
+}
+
+// Add the verifyUserOperation function
+export async function verifyUserOperation(txResponse: any, chainId: number) {
+  try {
+    if (!txResponse || !txResponse.hash) {
+      return { success: false, error: 'Invalid transaction response' };
+    }
+
+    // Wait for a few seconds to allow the transaction to propagate
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Create a public client for the specific chain
+    const network = SUPPORTED_NETWORKS.find(n => n.id === chainId);
+    if (!network) {
+      return { success: false, error: `Unsupported chain ID: ${chainId}` };
+    }
+
+    const client = createPublicClient({
+      chain: network,
+      transport: http()
+    });
+
+    // Check transaction receipt
+    const receipt = await client.getTransactionReceipt({
+      hash: txResponse.hash as `0x${string}`
+    });
+
+    if (!receipt) {
+      return { success: false, error: 'Transaction receipt not found' };
+    }
+
+    // Verify if the transaction was successful
+    if (receipt.status === 1) { //Corrected status check
+      return { success: true };
+    } else {
+      return { success: false, error: 'Transaction failed on-chain' };
+    }
+  } catch (error) {
+    console.error('Error verifying user operation:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error during verification'
+    };
   }
 }
