@@ -11,9 +11,10 @@ import { useTokenBalances } from "@/lib/tokens";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import CustomTokenForm from "./CustomTokenForm";
+import { useAccount } from "@/lib/web3";
 
 interface TokenListProps {
-  address: string;
+  address: string; // This is now the EOA address
 }
 
 interface CustomToken {
@@ -23,7 +24,8 @@ interface CustomToken {
 }
 
 export default function TokenList({ address }: TokenListProps) {
-  const { data: tokens, isLoading, refetch } = useTokenBalances(address);
+  const { smartWalletAddress } = useAccount();
+  const { data: tokens, isLoading, refetch } = useTokenBalances(smartWalletAddress || '');
   const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
 
   // Load custom tokens from localStorage
@@ -42,6 +44,18 @@ export default function TokenList({ address }: TokenListProps) {
 
     return () => clearInterval(interval);
   }, [refetch]);
+
+  if (!smartWalletAddress) {
+    return (
+      <Card>
+        <CardContent className="py-4">
+          <p className="text-center text-muted-foreground">
+            Please connect your smart wallet to view balances
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

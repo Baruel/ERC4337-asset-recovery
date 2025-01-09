@@ -46,6 +46,13 @@ export function useTokenBalances(address: string) {
   return useQuery({
     queryKey: ['token-balances', address],
     queryFn: async () => {
+      if (!address) {
+        console.log('No smart wallet address provided for balance check');
+        return [];
+      }
+
+      console.log('Fetching balances for smart wallet address:', address);
+
       const balances = await Promise.all(
         SUPPORTED_NETWORKS.flatMap(async (network) => {
           const networkTokens = NETWORK_TOKENS[network.id as keyof typeof NETWORK_TOKENS] || [];
@@ -53,7 +60,7 @@ export function useTokenBalances(address: string) {
           const networkBalances = await Promise.all(
             networkTokens.map(async (token) => {
               try {
-                console.log(`Requesting balance for ${token.symbol} on ${network.name} (Chain ID: ${network.id})`);
+                console.log(`Requesting balance for ${token.symbol} on ${network.name} (Chain ID: ${network.id}) for smart wallet: ${address}`);
                 const result = await fetch('/api/tokens/balance', {
                   method: 'POST',
                   headers: {
@@ -90,7 +97,6 @@ export function useTokenBalances(address: string) {
         })
       );
 
-      // Flatten the array of arrays into a single array
       return balances.flat();
     },
     enabled: !!address
