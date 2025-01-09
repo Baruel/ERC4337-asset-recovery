@@ -21,10 +21,12 @@ import {
 import { useTokenBalances } from "@/lib/tokens";
 import { useSendTransaction } from "@/lib/web3";
 import { useToast } from "@/hooks/use-toast";
+import { SUPPORTED_NETWORKS } from "@/lib/web3";
 
 const formSchema = z.object({
   recipient: z.string().startsWith("0x"),
   amount: z.string().min(1),
+  network: z.string(),
   token: z.string(),
 });
 
@@ -42,9 +44,15 @@ export default function SendAssets({ address }: SendAssetsProps) {
     defaultValues: {
       recipient: "",
       amount: "",
+      network: "",
       token: "",
     },
   });
+
+  // Filter tokens based on selected network
+  const networkTokens = tokens?.filter(
+    (token) => token.network === form.watch("network")
+  );
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
@@ -82,6 +90,31 @@ export default function SendAssets({ address }: SendAssetsProps) {
 
         <FormField
           control={form.control}
+          name="network"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Network</FormLabel>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select network" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {SUPPORTED_NETWORKS.map((network) => (
+                    <SelectItem key={network.id} value={network.name}>
+                      {network.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
           name="token"
           render={({ field }) => (
             <FormItem>
@@ -89,6 +122,7 @@ export default function SendAssets({ address }: SendAssetsProps) {
               <Select
                 onValueChange={field.onChange}
                 defaultValue={field.value}
+                disabled={!form.watch("network")}
               >
                 <FormControl>
                   <SelectTrigger>
@@ -96,7 +130,7 @@ export default function SendAssets({ address }: SendAssetsProps) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {tokens?.map((token) => (
+                  {networkTokens?.map((token) => (
                     <SelectItem key={token.address} value={token.address}>
                       {token.symbol}
                     </SelectItem>
