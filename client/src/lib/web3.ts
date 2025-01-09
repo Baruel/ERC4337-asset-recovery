@@ -70,7 +70,7 @@ const useWalletStore = create<WalletState>((set) => ({
       const account = privateKeyToAccount(privateKey as `0x${string}`);
 
       // Create wallet clients for each network
-      const walletClients = SUPPORTED_NETWORKS.map(network => 
+      const walletClients = SUPPORTED_NETWORKS.map(network =>
         createWalletClient({
           account,
           chain: network,
@@ -164,7 +164,7 @@ export function useSendTransaction() {
 
         // Create UserOperation
         const userOp = {
-          sender: smartWalletAddress,
+          sender: smartWalletAddress as `0x${string}`,
           nonce: BigInt(0), // Should be fetched from the smart wallet contract
           initCode: '0x',
           callData,
@@ -177,17 +177,14 @@ export function useSendTransaction() {
           signature: '0x' // Will be filled after signing
         };
 
-        // Sign the UserOperation
-        const account = privateKeyToAccount(privateKey as `0x${string}`);
-        const client = createWalletClient({
-          account,
-          chain: network,
-          transport: http()
+        console.log('Sending UserOperation:', {
+          network: network.name,
+          chainId: network.id,
+          recipient: values.recipient,
+          amount: values.amount,
+          token: values.token,
+          userOp
         });
-
-        // TODO: Add proper UserOperation signing
-        // This is a placeholder for the actual signing process
-        userOp.signature = '0x1234';
 
         // Send to bundler
         const response = await fetch('/api/send-user-operation', {
@@ -202,10 +199,14 @@ export function useSendTransaction() {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to send transaction');
+          const error = await response.json();
+          console.error('Transaction failed:', error);
+          throw new Error(error.details || 'Failed to send transaction');
         }
 
-        return await response.json();
+        const result = await response.json();
+        console.log('Transaction result:', result);
+        return result;
       } catch (error) {
         console.error('Transaction error:', error);
         throw error;
