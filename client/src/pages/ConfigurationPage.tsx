@@ -7,12 +7,16 @@ import { Switch } from "@/components/ui/switch";
 import { useForm } from "react-hook-form";
 import { useBundlerConfig } from "@/lib/web3";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, ExternalLink } from "lucide-react";
+import { AlertCircle, ExternalLink, Loader2 } from "lucide-react";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
-interface ConfigurationForm {
-  alchemyApiKey: string;
-  usePaymaster: boolean;
-}
+const configSchema = z.object({
+  alchemyApiKey: z.string().min(1, "Alchemy API key is required"),
+  usePaymaster: z.boolean().default(false),
+});
+
+type ConfigurationForm = z.infer<typeof configSchema>;
 
 export default function ConfigurationPage() {
   const { toast } = useToast();
@@ -20,6 +24,7 @@ export default function ConfigurationPage() {
   const [isConfigured, setIsConfigured] = useState(false);
 
   const form = useForm<ConfigurationForm>({
+    resolver: zodResolver(configSchema),
     defaultValues: {
       alchemyApiKey: "",
       usePaymaster: false,
@@ -37,7 +42,7 @@ export default function ConfigurationPage() {
       setIsConfigured(true);
       toast({
         title: "Configuration updated",
-        description: "Your bundler settings have been saved successfully.",
+        description: "Your provider settings have been saved successfully.",
       });
     } catch (error) {
       toast({
@@ -52,22 +57,30 @@ export default function ConfigurationPage() {
     <div className="container max-w-3xl py-10">
       <Card>
         <CardHeader>
-          <CardTitle>Account Abstraction Configuration</CardTitle>
+          <CardTitle>Provider Configuration</CardTitle>
           <CardDescription>
-            Configure your wallet settings to interact with the blockchain networks.
-            This configuration is required before you can start using the application.
+            Configure your blockchain provider settings to start using the application.
+            This is a one-time setup required to interact with the networks.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="rounded-lg bg-blue-50 p-4 text-blue-800 mb-6">
+          {/* Information about Alchemy */}
+          <div className="rounded-lg bg-blue-50 p-4 text-blue-800">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 mt-0.5" />
-              <div>
-                <h4 className="font-semibold mb-2">Why do I need an Alchemy API key?</h4>
-                <p className="text-sm">
-                  Alchemy is a blockchain infrastructure provider that allows us to interact with various blockchain networks.
-                  Your API key ensures reliable and secure access to these networks.
-                </p>
+              <div className="space-y-2">
+                <h4 className="font-semibold">Why do I need an Alchemy API key?</h4>
+                <div className="text-sm space-y-2">
+                  <p>
+                    Alchemy is a blockchain infrastructure provider that enables secure and reliable access to various blockchain networks.
+                    Your API key is required to:
+                  </p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>Connect to multiple blockchain networks reliably</li>
+                    <li>Execute transactions securely</li>
+                    <li>Ensure stable connection to the blockchain</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -81,7 +94,11 @@ export default function ConfigurationPage() {
                   <FormItem>
                     <FormLabel>Alchemy API Key</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter your Alchemy API key" {...field} />
+                      <Input 
+                        placeholder="Enter your Alchemy API key" 
+                        {...field}
+                        className="font-mono"
+                      />
                     </FormControl>
                     <FormDescription className="space-y-2">
                       <p>To get your Alchemy API key:</p>
@@ -98,7 +115,7 @@ export default function ConfigurationPage() {
                           </a>
                         </li>
                         <li>Create a free account or sign in</li>
-                        <li>Create a new app for the networks you want to use</li>
+                        <li>Create a new app for any network (the key works for all networks)</li>
                         <li>Copy the API Key from your app's dashboard</li>
                       </ol>
                     </FormDescription>
@@ -113,7 +130,7 @@ export default function ConfigurationPage() {
                   <FormItem className="space-y-4">
                     <div className="flex flex-row items-center justify-between rounded-lg border p-4">
                       <div className="space-y-1">
-                        <FormLabel className="text-base">Use Paymaster</FormLabel>
+                        <FormLabel className="text-base">Use Paymaster Service</FormLabel>
                         <FormDescription>
                           Enable this to use a paymaster service for transaction fees.
                         </FormDescription>
@@ -131,11 +148,12 @@ export default function ConfigurationPage() {
                       <div className="text-sm space-y-2">
                         <p>
                           <strong>With Paymaster (ON):</strong> Transaction fees will be sponsored by the paymaster service.
-                          This is useful for testing but may have limitations.
+                          This is useful for testing but may have limitations or restrictions.
                         </p>
                         <p>
-                          <strong>Without Paymaster (OFF):</strong> You'll need to fund your smart wallet with tokens
-                          to pay for transaction fees. This gives you more control and reliability.
+                          <strong>Without Paymaster (OFF):</strong> You'll need to fund your smart wallet with native tokens
+                          (ETH, MATIC, etc.) to pay for transaction fees. This gives you more control and reliability.
+                          We recommend this option for production use.
                         </p>
                       </div>
                     </div>
@@ -148,7 +166,14 @@ export default function ConfigurationPage() {
                 className="w-full"
                 disabled={bundlerConfig.isPending}
               >
-                {bundlerConfig.isPending ? "Saving..." : "Save Configuration"}
+                {bundlerConfig.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving Configuration...
+                  </>
+                ) : (
+                  "Save Configuration"
+                )}
               </Button>
 
               {isConfigured && (
@@ -161,7 +186,7 @@ export default function ConfigurationPage() {
                     {!form.getValues("usePaymaster") && (
                       <p>
                         <strong>Important:</strong> Since you've disabled the paymaster,
-                        remember to fund your smart wallet with tokens to pay for transaction fees.
+                        remember to fund your smart wallet with native tokens (ETH, MATIC, etc.) to pay for transaction fees.
                       </p>
                     )}
                   </div>

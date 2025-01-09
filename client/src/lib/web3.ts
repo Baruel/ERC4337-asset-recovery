@@ -28,6 +28,52 @@ export const config = createConfig({
   }), {} as Record<(typeof SUPPORTED_NETWORKS)[number]['id'], ReturnType<typeof http>>)
 });
 
+interface BundlerConfig {
+  type: 'alchemy';
+  apiKey: string;
+  paymasterUrl?: string;
+}
+
+// Enhanced bundler configuration hook with better error handling
+export function useBundlerConfig() {
+  return useMutation({
+    mutationFn: async (config: BundlerConfig) => {
+      try {
+        const response = await fetch('/api/config/bundler', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: config.type,
+            apiKey: config.apiKey,
+            paymasterUrl: config.paymasterUrl
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage = 'Failed to update bundler configuration';
+
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error || errorData.message || errorText;
+          } catch {
+            errorMessage = errorText;
+          }
+
+          throw new Error(`Configuration failed: ${errorMessage}`);
+        }
+
+        return response.json();
+      } catch (error) {
+        console.error('Bundler configuration error:', error);
+        throw error instanceof Error ? error : new Error('Unknown error occurred');
+      }
+    },
+  });
+}
+
 // Hook for account management
 export function useAccount() {
   const { address, smartWalletAddress, connect } = useWalletStore();
@@ -229,27 +275,6 @@ function formatTransactionError(error: any, context: Record<string, any> = {}) {
   return errorResponse;
 }
 
-// Add new hooks for managing bundler configuration and paymaster settings
-export function useBundlerConfig() {
-  return useMutation({
-    mutationFn: async (config: { type: string; apiKey: string; paymasterUrl?: string }) => {
-      const response = await fetch('/api/config/bundler', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(config),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Failed to update bundler configuration: ${error}`);
-      }
-
-      return response.json();
-    },
-  });
-}
 
 // Updated sendTransaction hook with explicit paymaster handling
 export function useSendTransaction() {
@@ -375,7 +400,7 @@ export function useSendTransaction() {
   };
 }
 
-// Add the verifyUserOperation function
+// In verifyUserOperation function, fix the status comparison
 export async function verifyUserOperation(txResponse: any, chainId: number) {
   try {
     if (!txResponse || !txResponse.hash) {
@@ -385,7 +410,6 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
     // Wait for a few seconds to allow the transaction to propagate
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Create a public client for the specific chain
     const network = SUPPORTED_NETWORKS.find(n => n.id === chainId);
     if (!network) {
       return { success: false, error: `Unsupported chain ID: ${chainId}` };
@@ -396,7 +420,6 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
       transport: http()
     });
 
-    // Check transaction receipt
     const receipt = await client.getTransactionReceipt({
       hash: txResponse.hash as `0x${string}`
     });
@@ -405,12 +428,15 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
       return { success: false, error: 'Transaction receipt not found' };
     }
 
-    // Fix the status comparison by explicitly checking both cases
-    if (receipt.status === 'success' || receipt.status === 1n || receipt.status === 1) {
-      return { success: true };
-    } else {
-      return { success: false, error: 'Transaction failed on-chain' };
-    }
+    // Handle different status types without direct comparison
+    const isSuccess = receipt.status !== undefined && (
+      String(receipt.status) === 'success' ||
+      String(receipt.status) === '1'
+    );
+
+    return isSuccess 
+      ? { success: true }
+      : { success: false, error: 'Transaction failed on-chain' };
   } catch (error) {
     console.error('Error verifying user operation:', error);
     return {

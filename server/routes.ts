@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createPublicClient, http } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'viem/chains';
-import { createBundlerProvider, type BundlerProvider } from './bundler/providers';
+import { createBundlerProvider } from './bundler/factory';
+import type { BundlerProvider, BundlerProviderConfig } from './bundler/types';
 
 // Network configurations with RPC URLs
 const NETWORKS = {
@@ -36,8 +37,7 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
-// Constants for Account Abstraction with updated Polygon factory and paymaster
-
+// Constants for Account Abstraction with updated Polygon factory
 const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
   137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Polygon-specific factory
@@ -48,24 +48,13 @@ const SIMPLE_ACCOUNT_FACTORY = {
   43114: '0x9406Cc6185a346906296840746125a0E44976454'
 } as const;
 
-
-// Remove hardcoded paymaster configuration and make it part of the bundler config
-interface BundlerConfig {
-  type?: string;
-  apiKey: string;
-  paymasterUrl?: string;
-}
-
 // Updated bundler provider initialization with configuration
 let bundlerProvider: BundlerProvider | null = null;
-let bundlerConfig: BundlerConfig | null = null;
+let bundlerConfig: BundlerProviderConfig | null = null;
 
-function initializeBundlerProvider(config: BundlerConfig) {
+function initializeBundlerProvider(config: BundlerProviderConfig) {
   bundlerConfig = config;
-  bundlerProvider = createBundlerProvider({
-    type: config.type,
-    apiKey: config.apiKey
-  });
+  bundlerProvider = createBundlerProvider('alchemy', config);
   console.log('Bundler provider initialized with configuration');
 }
 
@@ -308,18 +297,23 @@ export function registerRoutes(app: Express): Server {
   // Add configuration endpoint for bundler settings
   app.post('/api/config/bundler', (req, res) => {
     try {
-      const { type, apiKey, paymasterUrl } = req.body;
+      const { apiKey, paymasterUrl } = req.body;
 
       if (!apiKey) {
         return res.status(400).json({ error: 'API key is required' });
       }
 
-      initializeBundlerProvider({ type, apiKey, paymasterUrl });
+      // Initialize bundler with provided configuration
+      initializeBundlerProvider({ 
+        apiKey,
+        paymasterUrl 
+      });
+
       res.json({ 
         success: true, 
         message: 'Bundler configuration updated successfully',
         config: {
-          type: type || 'alchemy',
+          type: 'alchemy',
           hasPaymaster: !!paymasterUrl
         }
       });
@@ -338,22 +332,13 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Bundler provider not configured. Please configure bundler settings first.');
       }
 
-      if (!chainId) {
-        throw new Error('Missing chainId parameter');
-      }
-
-      const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
-      if (!factoryAddress) {
-        throw new Error(`Unsupported chain ID: ${chainId}`);
-      }
-
       const entryPoint = ENTRY_POINT_ADDRESSES[chainId as keyof typeof ENTRY_POINT_ADDRESSES];
       if (!entryPoint) {
         throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
       // Clear paymaster data if not using paymaster
-      if (!usePaymaster || !bundlerConfig?.paymasterUrl) {
+      if (!usePaymaster) {
         userOp.paymasterAndData = '0x';
         console.log('Paymaster disabled for this transaction');
       }
@@ -361,9 +346,8 @@ export function registerRoutes(app: Express): Server {
       // Enhanced logging for debugging
       console.log(`Sending UserOperation to network ${chainId}`);
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
-      console.log('Factory Address:', factoryAddress);
       console.log('EntryPoint:', entryPoint);
-      console.log('Paymaster Enabled:', usePaymaster && !!bundlerConfig?.paymasterUrl);
+      console.log('Paymaster Enabled:', usePaymaster);
 
       // Send the operation using the bundler
       const result = await bundlerProvider.sendUserOperation(

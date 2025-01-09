@@ -9,6 +9,7 @@ export interface BundlerProvider {
 export interface BundlerProviderConfig {
   apiKey: string;
   baseUrl?: string;
+  paymasterUrl?: string;
 }
 
 export interface BundlerConfig {
