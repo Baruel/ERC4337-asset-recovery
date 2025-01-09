@@ -1,5 +1,5 @@
 import { createConfig, http } from 'wagmi';
-import { mainnet } from 'wagmi/chains';
+import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient } from 'viem';
@@ -12,6 +12,17 @@ interface WalletState {
   disconnect: () => void;
 }
 
+// Define supported networks
+export const SUPPORTED_NETWORKS = [
+  mainnet,
+  polygon,
+  arbitrum,
+  optimism,
+  base,
+  avalanche,
+  bsc
+];
+
 // Create wallet store
 const useWalletStore = create<WalletState>((set) => ({
   address: null,
@@ -20,11 +31,15 @@ const useWalletStore = create<WalletState>((set) => ({
   connect: async (privateKey: string, smartWalletAddress: string) => {
     try {
       const account = privateKeyToAccount(privateKey as `0x${string}`);
-      const walletClient = createWalletClient({
-        account,
-        chain: mainnet,
-        transport: http()
-      });
+
+      // Create wallet clients for each network
+      const walletClients = SUPPORTED_NETWORKS.map(network => 
+        createWalletClient({
+          account,
+          chain: network,
+          transport: http()
+        })
+      );
 
       set({
         address: account.address,
@@ -45,12 +60,15 @@ const useWalletStore = create<WalletState>((set) => ({
   }
 }));
 
-// Initialize wagmi config
+// Initialize wagmi config with all supported networks
 export const config = createConfig({
-  chains: [mainnet],
-  transports: {
-    [mainnet.id]: http()
-  }
+  chains: SUPPORTED_NETWORKS,
+  transports: Object.fromEntries(
+    SUPPORTED_NETWORKS.map(network => [
+      network.id,
+      http()
+    ])
+  )
 });
 
 // Hook for account management
