@@ -44,7 +44,7 @@ export default function TokenList({ address }: TokenListProps) {
     return () => clearInterval(interval);
   }, [refetch]);
 
-  if (!smartWalletAddress) {
+  if (!address) {
     return (
       <Card>
         <CardContent className="py-4">
