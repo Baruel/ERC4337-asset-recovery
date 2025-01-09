@@ -4,27 +4,42 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: async ({ queryKey }) => {
-        const res = await fetch(queryKey[0] as string, {
+        // Handle both API and blockchain queries
+        const url = queryKey[0] as string;
+
+        if (!url.startsWith('/api')) {
+          throw new Error('Invalid query key format');
+        }
+
+        const res = await fetch(url, {
           credentials: "include",
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
 
         if (!res.ok) {
           if (res.status >= 500) {
-            throw new Error(`${res.status}: ${res.statusText}`);
+            throw new Error(`Server error: ${res.status}`);
           }
-
-          throw new Error(`${res.status}: ${await res.text()}`);
+          throw new Error(await res.text());
         }
 
         return res.json();
       },
-      refetchInterval: false,
+      // Refresh data every 30 seconds for blockchain data
+      refetchInterval: 30000,
+      // Don't refetch on window focus for better performance
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
-      retry: false,
+      // Keep data fresh for 10 seconds
+      staleTime: 10000,
+      // Retry failed requests 3 times
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
     mutations: {
-      retry: false,
+      retry: 2,
+      retryDelay: 1000,
     }
   },
 });

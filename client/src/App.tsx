@@ -8,14 +8,14 @@ import Home from "@/pages/Home";
 
 function App() {
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <WagmiProvider config={config}>
         <Switch>
           <Route path="/" component={Home} />
         </Switch>
         <Toaster />
-      </QueryClientProvider>
-    </WagmiProvider>
+      </WagmiProvider>
+    </QueryClientProvider>
   );
 }
 

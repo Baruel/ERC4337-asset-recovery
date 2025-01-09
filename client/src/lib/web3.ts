@@ -1,49 +1,84 @@
-import { 
-  createConfig,
-  http,
-} from 'wagmi';
+import { createConfig, http } from 'wagmi';
 import { mainnet } from 'wagmi/chains';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { useQuery } from '@tanstack/react-query';
-import { walletConnect } from 'wagmi/connectors';
+import { create } from 'zustand';
+import { privateKeyToAccount } from 'viem/accounts';
+import { createWalletClient } from 'viem';
 
-// Project ID from WalletConnect
-const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID || 'YOUR_PROJECT_ID';
+interface WalletState {
+  address: string | null;
+  smartWalletAddress: string | null;
+  privateKey: string | null;
+  connect: (privateKey: string, smartWalletAddress: string) => Promise<void>;
+  disconnect: () => void;
+}
 
+// Create wallet store
+const useWalletStore = create<WalletState>((set) => ({
+  address: null,
+  smartWalletAddress: null,
+  privateKey: null,
+  connect: async (privateKey: string, smartWalletAddress: string) => {
+    try {
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+      const walletClient = createWalletClient({
+        account,
+        chain: mainnet,
+        transport: http()
+      });
+
+      set({
+        address: account.address,
+        smartWalletAddress,
+        privateKey
+      });
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+      throw error;
+    }
+  },
+  disconnect: () => {
+    set({
+      address: null,
+      smartWalletAddress: null,
+      privateKey: null
+    });
+  }
+}));
+
+// Initialize wagmi config
 export const config = createConfig({
   chains: [mainnet],
-  connectors: [
-    walletConnect({ projectId }),
-  ],
   transports: {
     [mainnet.id]: http()
   }
 });
 
-export function useWeb3Modal() {
-  const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { connect } = useConnect();
-
+// Hook for account management
+export function useAccount() {
+  const { address, smartWalletAddress, connect } = useWalletStore();
   return {
     address,
-    isConnected,
-    disconnect,
+    smartWalletAddress,
+    isConnected: !!address,
     connect
   };
 }
 
-export function useAccount() {
-  return useAccount();
+// Hook for disconnecting
+export function useDisconnect() {
+  const { disconnect } = useWalletStore();
+  return { disconnect };
 }
 
+// Hook for transaction history
 export function useTransactionHistory(address: string) {
-  return useQuery({
-    queryKey: ['/api/transactions', address],
-    enabled: !!address
-  });
+  return {
+    data: [],
+    isLoading: false
+  };
 }
 
+// Hook for sending transactions
 export function useSendTransaction() {
   return {
     mutateAsync: async (values: any) => {
