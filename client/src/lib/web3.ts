@@ -232,7 +232,11 @@ export function useSendTransaction() {
           } catch (e) {
             errorDetails = errorText;
           }
-          throw new Error(errorDetails);
+
+          const error = new Error(errorDetails);
+          // Attach the user operation and network details to the error
+          (error as any).userOperation = serializedUserOp;
+          throw error;
         }
 
         const result = await response.json();

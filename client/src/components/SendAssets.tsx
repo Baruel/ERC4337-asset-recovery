@@ -36,11 +36,21 @@ interface SendAssetsProps {
   address: string;
 }
 
+interface TransactionError {
+  userOperation?: Record<string, any>;
+  network?: {
+    name: string;
+    chainId: number;
+  };
+  endpoint?: string;
+  message: string;
+}
+
 export default function SendAssets({ address }: SendAssetsProps) {
   const { data: tokens } = useTokenBalances(address);
   const { toast } = useToast();
   const { mutateAsync: sendTransaction, isLoading } = useSendTransaction();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<TransactionError | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -57,36 +67,40 @@ export default function SendAssets({ address }: SendAssetsProps) {
     (token) => token.network === form.watch("network")
   );
 
-  function formatErrorMessage(error: any): string {
-    if (typeof error === 'string') return error;
-
-    // Handle specific error types
-    if (error.message?.includes('insufficient funds')) {
-      return 'Insufficient funds to complete this transaction. Please check your balance and try again.';
-    }
-    if (error.message?.includes('nonce')) {
-      return 'Transaction sequence error. Please wait a moment and try again.';
-    }
-    if (error.message?.includes('gas')) {
-      return 'Gas estimation failed. The transaction might be invalid or the network could be congested.';
-    }
-
-    // Default error message
-    return error.message || 'Failed to send transaction. Please try again.';
-  }
-
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       setError(null);
-      await sendTransaction(values);
+      const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
+      if (!network) {
+        throw new Error('Network not found');
+      }
+
+      const result = await sendTransaction(values);
       toast({
         title: "Transaction Sent",
         description: "Your transaction has been submitted to the network.",
       });
       form.reset();
-    } catch (error) {
-      const formattedError = formatErrorMessage(error);
-      setError(formattedError);
+    } catch (error: any) {
+      // Extract the network information
+      const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
+
+      // Prepare the error details
+      const errorDetails: TransactionError = {
+        message: error.message || 'Failed to send transaction',
+        network: network ? {
+          name: network.name,
+          chainId: network.id
+        } : undefined,
+        endpoint: '/api/send-user-operation'
+      };
+
+      // If the error contains user operation details, add them
+      if (error.userOperation) {
+        errorDetails.userOperation = error.userOperation;
+      }
+
+      setError(errorDetails);
     }
   }
 
@@ -185,7 +199,7 @@ export default function SendAssets({ address }: SendAssetsProps) {
       <ErrorOverlay
         open={!!error}
         onClose={() => setError(null)}
-        description={error || ''}
+        details={error || { message: '' }}
       />
     </>
   );
