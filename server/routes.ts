@@ -37,6 +37,7 @@ const ENTRY_POINT_ADDRESSES = {
 };
 
 // Constants for Account Abstraction with updated Polygon factory and paymaster
+
 const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
   137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Polygon-specific factory
@@ -47,25 +48,34 @@ const SIMPLE_ACCOUNT_FACTORY = {
   43114: '0x9406Cc6185a346906296840746125a0E44976454'
 } as const;
 
-// Polygon-specific paymaster configuration
-const PAYMASTER_CONFIG = {
-  137: {
-    address: '0x000000000025EB742125C7E8A61c2519ae89A699', // Stackup Paymaster on Polygon
-    data: '0x' // Empty data for basic sponsorship
-  }
-};
+
+// Remove hardcoded paymaster configuration and make it part of the bundler config
+interface BundlerConfig {
+  type?: string;
+  apiKey: string;
+  paymasterUrl?: string;
+}
 
 // Updated bundler provider initialization with configuration
 let bundlerProvider: BundlerProvider | null = null;
+let bundlerConfig: BundlerConfig | null = null;
 
-function initializeBundlerProvider(config?: { type?: string; apiKey?: string }) {
-  bundlerProvider = createBundlerProvider(config);
+function initializeBundlerProvider(config: BundlerConfig) {
+  bundlerConfig = config;
+  bundlerProvider = createBundlerProvider({
+    type: config.type,
+    apiKey: config.apiKey
+  });
   console.log('Bundler provider initialized with configuration');
 }
 
 // Initialize with environment variables by default
 try {
-  initializeBundlerProvider();
+  if (process.env.ALCHEMY_API_KEY) {
+    initializeBundlerProvider({ apiKey: process.env.ALCHEMY_API_KEY });
+  } else {
+    console.log('No default configuration found. Waiting for user configuration...');
+  }
 } catch (error) {
   console.warn('Failed to initialize bundler provider with environment variables:', error);
   console.log('Waiting for user-provided configuration...');
@@ -298,24 +308,31 @@ export function registerRoutes(app: Express): Server {
   // Add configuration endpoint for bundler settings
   app.post('/api/config/bundler', (req, res) => {
     try {
-      const { type, apiKey } = req.body;
+      const { type, apiKey, paymasterUrl } = req.body;
 
       if (!apiKey) {
         return res.status(400).json({ error: 'API key is required' });
       }
 
-      initializeBundlerProvider({ type, apiKey });
-      res.json({ success: true, message: 'Bundler configuration updated successfully' });
+      initializeBundlerProvider({ type, apiKey, paymasterUrl });
+      res.json({ 
+        success: true, 
+        message: 'Bundler configuration updated successfully',
+        config: {
+          type: type || 'alchemy',
+          hasPaymaster: !!paymasterUrl
+        }
+      });
     } catch (error) {
       console.error('Error updating bundler configuration:', error);
       res.status(500).json({ error: 'Failed to update bundler configuration' });
     }
   });
 
-  // Updated send-user-operation endpoint with optional paymaster
+  // Updated send-user-operation endpoint with proper paymaster handling
   app.post('/api/send-user-operation', async (req, res) => {
     try {
-      const { userOp, chainId, usePaymaster = true } = req.body;
+      const { userOp, chainId, usePaymaster = false } = req.body;
 
       if (!bundlerProvider) {
         throw new Error('Bundler provider not configured. Please configure bundler settings first.');
@@ -335,12 +352,8 @@ export function registerRoutes(app: Express): Server {
         throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
-      // Only add paymaster data if explicitly requested and on Polygon network
-      if (usePaymaster && chainId === 137 && userOp.paymasterAndData.length <= 2) {
-        const paymaster = PAYMASTER_CONFIG[137];
-        userOp.paymasterAndData = paymaster.address + paymaster.data.slice(2);
-        console.log('Added paymaster data to UserOperation');
-      } else if (!usePaymaster) {
+      // Clear paymaster data if not using paymaster
+      if (!usePaymaster || !bundlerConfig?.paymasterUrl) {
         userOp.paymasterAndData = '0x';
         console.log('Paymaster disabled for this transaction');
       }
@@ -350,7 +363,7 @@ export function registerRoutes(app: Express): Server {
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
       console.log('Factory Address:', factoryAddress);
       console.log('EntryPoint:', entryPoint);
-      console.log('Paymaster Enabled:', usePaymaster);
+      console.log('Paymaster Enabled:', usePaymaster && !!bundlerConfig?.paymasterUrl);
 
       // Send the operation using the bundler
       const result = await bundlerProvider.sendUserOperation(
@@ -371,6 +384,7 @@ export function registerRoutes(app: Express): Server {
           factoryAddress: SIMPLE_ACCOUNT_FACTORY[req.body.chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY],
           entryPoint: ENTRY_POINT_ADDRESSES[req.body.chainId as keyof typeof ENTRY_POINT_ADDRESSES],
           usePaymaster: req.body.usePaymaster,
+          hasPaymasterConfig: !!bundlerConfig?.paymasterUrl,
           timestamp: new Date().toISOString()
         }
       });

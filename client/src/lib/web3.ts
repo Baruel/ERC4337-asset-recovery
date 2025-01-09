@@ -232,7 +232,7 @@ function formatTransactionError(error: any, context: Record<string, any> = {}) {
 // Add new hooks for managing bundler configuration and paymaster settings
 export function useBundlerConfig() {
   return useMutation({
-    mutationFn: async (config: { type?: string; apiKey: string }) => {
+    mutationFn: async (config: { type?: string; apiKey: string; paymasterUrl?: string }) => {
       const response = await fetch('/api/config/bundler', {
         method: 'POST',
         headers: {
@@ -242,7 +242,8 @@ export function useBundlerConfig() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update bundler configuration');
+        const error = await response.text();
+        throw new Error(`Failed to update bundler configuration: ${error}`);
       }
 
       return response.json();
@@ -251,7 +252,7 @@ export function useBundlerConfig() {
 }
 
 
-// Updated sendTransaction hook with paymaster toggle
+// Updated sendTransaction hook with explicit paymaster handling
 export function useSendTransaction() {
   const { privateKey, address, smartWalletAddress } = useWalletStore();
 
@@ -261,7 +262,7 @@ export function useSendTransaction() {
       amount: string;
       network: string;
       token: string;
-      usePaymaster?: boolean; // New optional parameter
+      usePaymaster?: boolean; // Optional parameter for paymaster usage
     }) => {
       let selectedNetwork;
       try {
@@ -312,7 +313,7 @@ export function useSendTransaction() {
           preVerificationGas: '50000',
           maxFeePerGas: '5000000000',
           maxPriorityFeePerGas: '5000000000',
-          paymasterAndData: '0x', // Will be filled by the server for Polygon network
+          paymasterAndData: '0x', // Will be handled by the server based on usePaymaster
           signature: '0x' // Will be filled after signing
         };
 
@@ -325,7 +326,7 @@ export function useSendTransaction() {
         const serializedUserOp = serializeUserOp(signedUserOp);
         console.log('Sending serialized UserOperation:', JSON.stringify(serializedUserOp, null, 2));
 
-        // Send to bundler
+        // Send to bundler with explicit paymaster flag
         const response = await fetch('/api/send-user-operation', {
           method: 'POST',
           headers: {
@@ -334,15 +335,26 @@ export function useSendTransaction() {
           body: JSON.stringify({
             userOp: serializedUserOp,
             chainId: selectedNetwork.id,
-            usePaymaster: values.usePaymaster ?? true // Default to true if not specified
+            usePaymaster: values.usePaymaster ?? false // Default to false for safety
           })
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          const error = new Error(`Failed to send transaction: ${errorText}`);
-          (error as any).rawError = errorText;
-          throw error;
+          let errorMessage = 'Failed to send transaction';
+
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error?.includes('paymaster')) {
+              errorMessage = `Paymaster error: ${errorData.error}. Consider sending without a paymaster or ensure your wallet has sufficient funds.`;
+            } else {
+              errorMessage = errorData.error || errorText;
+            }
+          } catch (e) {
+            errorMessage = errorText;
+          }
+
+          throw new Error(errorMessage);
         }
 
         const result = await response.json();
@@ -356,6 +368,7 @@ export function useSendTransaction() {
             name: selectedNetwork.name,
             chainId: selectedNetwork.id
           } : undefined,
+          usePaymaster: values.usePaymaster,
           timestamp: new Date().toISOString()
         });
       }
