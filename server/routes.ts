@@ -41,7 +41,7 @@ export function registerRoutes(app: Express): Server {
       // For testing and development, return a zero nonce
       // In production, this should be fetched from the actual smart wallet contract
       console.log(`Returning test nonce for address ${address} on chain ${chainId}`);
-      res.json("0");
+      res.json(0);
     } catch (error) {
       console.error('Error fetching nonce:', error);
       res.status(500).json({ error: 'Failed to fetch nonce' });
@@ -135,13 +135,21 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
+      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
+
       const result = await bundlerProvider.sendUserOperation(userOp, entryPoint, network);
       res.json(result);
     } catch (error) {
       console.error('Error sending UserOperation:', error);
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      let errorDetails = error instanceof Error ? error.toString() : JSON.stringify(error);
+
       res.status(500).json({
         error: 'Failed to send UserOperation',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        message: errorMessage,
+        details: errorDetails,
+        timestamp: new Date().toISOString(),
+        path: '/api/send-user-operation'
       });
     }
   });

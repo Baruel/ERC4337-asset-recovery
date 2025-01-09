@@ -242,7 +242,7 @@ export function useSendTransaction() {
         }
 
         console.log('Raw nonce response:', nonceData);
-        const nonce = BigInt(nonceData.trim());
+        const nonce = BigInt(nonceData.trim().replace(/['"]/g, '')); // Remove any quotes
         console.log('Parsed nonce:', nonce.toString());
 
         // Create UserOperation with increased gas values
@@ -271,12 +271,16 @@ export function useSendTransaction() {
 
         // Get the entry point address for the current network
         const entryPointResponse = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`);
+        if (!entryPointResponse.ok) {
+          throw new Error('Failed to fetch entry point address');
+        }
         const entryPoint = await entryPointResponse.text();
+        const cleanEntryPoint = entryPoint.trim().replace(/['"]/g, '');
 
-        console.log('Using entry point:', entryPoint);
+        console.log('Using entry point:', cleanEntryPoint);
 
         // Sign the user operation with chain ID and entry point
-        const signature = await signUserOp(userOp, network.id, entryPoint.trim(), privateKey);
+        const signature = await signUserOp(userOp, network.id, cleanEntryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 
         // Serialize BigInt values before sending to API

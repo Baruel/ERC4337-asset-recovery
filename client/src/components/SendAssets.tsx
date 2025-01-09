@@ -23,13 +23,13 @@ import { useTokenBalances } from "@/lib/tokens";
 import { useSendTransaction } from "@/lib/web3";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_NETWORKS } from "@/lib/web3";
-import { ErrorOverlay } from "@/components/ui/error-overlay";
+import { TransactionErrorDisplay } from "@/components/ui/transaction-error-display";
 
 const formSchema = z.object({
-  recipient: z.string().startsWith("0x"),
-  amount: z.string().min(1),
-  network: z.string(),
-  token: z.string(),
+  recipient: z.string().startsWith("0x").length(42, "Invalid address length"),
+  amount: z.string().min(1, "Amount is required"),
+  network: z.string().min(1, "Network is required"),
+  token: z.string().startsWith("0x", "Invalid token address"),
 });
 
 interface SendAssetsProps {
@@ -63,7 +63,6 @@ export default function SendAssets({ address }: SendAssetsProps) {
     },
   });
 
-  // Filter tokens based on selected network
   const networkTokens = tokens?.filter(
     (token) => token.network === form.watch("network")
   );
@@ -76,17 +75,16 @@ export default function SendAssets({ address }: SendAssetsProps) {
         throw new Error('Network not found');
       }
 
-      const result = await sendTransaction(values);
+      await sendTransaction(values);
       toast({
         title: "Transaction Sent",
         description: "Your transaction has been submitted to the network.",
       });
       form.reset();
     } catch (error: any) {
-      // Extract the network information
       const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
 
-      // Prepare the error details
+      // Parse and format the error details
       const errorDetails: TransactionError = {
         message: error.message || 'Failed to send transaction',
         network: network ? {
@@ -94,15 +92,12 @@ export default function SendAssets({ address }: SendAssetsProps) {
           chainId: network.id
         } : undefined,
         endpoint: '/api/send-user-operation',
+        userOperation: error.userOperation,
         rawError: error.rawError
       };
 
-      // If the error contains user operation details, add them
-      if (error.userOperation) {
-        errorDetails.userOperation = error.userOperation;
-      }
-
       setError(errorDetails);
+      console.error('Transaction Error:', errorDetails);
     }
   }
 
@@ -185,23 +180,32 @@ export default function SendAssets({ address }: SendAssetsProps) {
               <FormItem>
                 <FormLabel>Amount</FormLabel>
                 <FormControl>
-                  <Input type="number" step="any" {...field} />
+                  <Input
+                    type="number"
+                    step="any"
+                    {...field}
+                    onChange={(e) => field.onChange(e.target.value)}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button 
+            type="submit" 
+            className="w-full" 
+            disabled={isLoading}
+          >
             {isLoading ? "Sending..." : "Send"}
           </Button>
         </form>
       </Form>
 
-      <ErrorOverlay
+      <TransactionErrorDisplay
         open={!!error}
         onClose={() => setError(null)}
-        details={error || { message: '' }}
+        error={error || { message: '' }}
       />
     </>
   );
