@@ -1,0 +1,47 @@
+Sending UserOperation to network 137 via Alchemy bundler
+UserOperation: {
+  "sender": "0x0F0c303A48300816f8B7751640e0930fDe472B97",
+  "nonce": "0x0",
+  "initCode": "0x",
+  "callData": "0xa9059cbb000000000000000000000000fdfec1cbc5a10fc8f69c08af8d91ea3b5190b5e60000000000000000000000000000000000000000000000000000000000000001",
+  "callGasLimit": "0x7a120",
+  "verificationGasLimit": "0x7a120",
+  "preVerificationGas": "0xc350",
+  "maxFeePerGas": "0x12a05f200",
+  "maxPriorityFeePerGas": "0x12a05f200",
+  "paymasterAndData": "0x",
+  "signature": "0xcc6ae5dff69ecd2e986ba03fbfb5e06ef15c76d55861174d6fcd33ed36a001316fd44f5e8d11938a4c7a0d8032ec702aacd2bbbc44d759f1293bebf9d0e40f0e1c"
+}
+[Alchemy] Sending UserOperation to chain 137
+[Alchemy] EntryPoint: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+[Alchemy] Sending UserOperation: {
+  "sender": "0x0F0c303A48300816f8B7751640e0930fDe472B97",
+  "nonce": "0x0",
+  "initCode": "0x",
+  "callData": "0xa9059cbb000000000000000000000000fdfec1cbc5a10fc8f69c08af8d91ea3b5190b5e60000000000000000000000000000000000000000000000000000000000000001",
+  "callGasLimit": "0x7a120",
+  "verificationGasLimit": "0x7a120",
+  "preVerificationGas": "0xc350",
+  "maxFeePerGas": "0x12a05f200",
+  "maxPriorityFeePerGas": "0x12a05f200",
+  "paymasterAndData": "0x",
+  "signature": "0xcc6ae5dff69ecd2e986ba03fbfb5e06ef15c76d55861174d6fcd33ed36a001316fd44f5e8d11938a4c7a0d8032ec702aacd2bbbc44d759f1293bebf9d0e40f0e1c"
+}
+[Alchemy] RPC error: {
+  code: -32000,
+  message: 'precheck failed: sender 0x0f0c303a48300816f8b7751640e0930fde472b97 is not a contract and initCode is empty'
+}
+[Alchemy] Error in sendUserOperation: Error: precheck failed: sender 0x0f0c303a48300816f8b7751640e0930fde472b97 is not a contract and initCode is empty
+    at AlchemyBundlerProvider.sendUserOperation (/home/runner/workspace/server/bundler/providers/alchemy.ts:81:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:284:22)
+Error sending UserOperation: Error: precheck failed: sender 0x0f0c303a48300816f8b7751640e0930fde472b97 is not a contract and initCode is empty
+    at AlchemyBundlerProvider.sendUserOperation (/home/runner/workspace/server/bundler/providers/alchemy.ts:81:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:284:22)
+/home/runner/workspace/server/routes.ts:294
+        network,
+        ^
+
+
+ReferenceError: network is not defined
