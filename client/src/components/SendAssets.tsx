@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -25,6 +25,12 @@ import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_NETWORKS } from "@/lib/web3";
 import { TransactionErrorDisplay } from "@/components/ui/transaction-error-display";
 
+interface CustomToken {
+  address: string;
+  symbol: string;
+  network: string;
+}
+
 const formSchema = z.object({
   recipient: z.string().startsWith("0x").length(42, "Invalid address length"),
   amount: z.string().min(1, "Amount is required"),
@@ -48,10 +54,19 @@ interface TransactionError {
 }
 
 export default function SendAssets({ address }: SendAssetsProps) {
-  const { data: tokens } = useTokenBalances(address);
+  const { data: networkTokens } = useTokenBalances(address);
   const { toast } = useToast();
   const { mutateAsync: sendTransaction, isLoading } = useSendTransaction();
   const [error, setError] = useState<TransactionError | null>(null);
+  const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
+
+  // Load custom tokens from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("customTokens");
+    if (stored) {
+      setCustomTokens(JSON.parse(stored));
+    }
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,9 +78,18 @@ export default function SendAssets({ address }: SendAssetsProps) {
     },
   });
 
-  const networkTokens = tokens?.filter(
-    (token) => token.network === form.watch("network")
-  );
+  // Combine and filter tokens based on selected network
+  const selectedNetwork = form.watch("network");
+  const availableTokens = [
+    ...(networkTokens?.filter(token => token.network === selectedNetwork) || []),
+    ...customTokens
+      .filter(token => token.network === selectedNetwork)
+      .map(token => ({
+        ...token,
+        balance: '0',
+        value: 0
+      }))
+  ];
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
@@ -84,7 +108,6 @@ export default function SendAssets({ address }: SendAssetsProps) {
     } catch (error: any) {
       const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
 
-      // Parse and format the error details
       const errorDetails: TransactionError = {
         message: error.message || 'Failed to send transaction',
         network: network ? {
@@ -161,9 +184,12 @@ export default function SendAssets({ address }: SendAssetsProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {networkTokens?.map((token) => (
-                      <SelectItem key={token.address} value={token.address}>
-                        {token.symbol}
+                    {availableTokens.map((token) => (
+                      <SelectItem 
+                        key={`${token.network}-${token.address}`} 
+                        value={token.address}
+                      >
+                        {token.symbol} {token.balance !== '0' ? `(${token.balance})` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
