@@ -208,7 +208,16 @@ async function generateInitCode(ownerAddress: string, chainId: number): Promise<
     args: [ownerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
   });
 
-  return factoryAddress + initCode.slice(2); // Concatenate factory address with encoded function data
+  // Ensure factoryAddress has '0x' prefix and proper length
+  const formattedFactoryAddress = factoryAddress.toLowerCase().startsWith('0x')
+    ? factoryAddress.toLowerCase()
+    : `0x${factoryAddress}`;
+
+  if (formattedFactoryAddress.length !== 42) {
+    throw new Error(`Invalid factory address length: ${formattedFactoryAddress}`);
+  }
+
+  return formattedFactoryAddress + initCode.slice(2); // Concatenate factory address with encoded function data
 }
 
 // Hook for sending transactions
@@ -250,9 +259,14 @@ export function useSendTransaction() {
         });
 
         // Generate initCode if this is a new smart wallet
-        const initCode = !smartWalletAddress ? await generateInitCode(address, network.id) : '0x';
+        let initCode = '0x';
+        if (!smartWalletAddress) {
+          console.log('No smart wallet found, generating initCode...');
+          initCode = await generateInitCode(address, network.id);
+          console.log('Generated initCode:', initCode);
+        }
 
-        // Fetch the current nonce from the smart wallet contract
+        // Fetch the current nonce
         const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress || address}&chainId=${network.id}`);
         if (!nonceResponse.ok) {
           throw new Error('Failed to fetch nonce');
@@ -285,7 +299,7 @@ export function useSendTransaction() {
           maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(),
         });
 
-        // Get the entry point address for the current network
+        // Get the entry point address
         const entryPointResponse = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`);
         if (!entryPointResponse.ok) {
           throw new Error('Failed to fetch entry point address');
@@ -295,13 +309,12 @@ export function useSendTransaction() {
 
         console.log('Using entry point:', cleanEntryPoint);
 
-        // Sign the user operation with chain ID and entry point
+        // Sign the user operation
         const signature = await signUserOp(userOp, network.id, cleanEntryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 
-        // Serialize BigInt values before sending to API
+        // Serialize before sending
         const serializedUserOp = serializeUserOp(signedUserOp);
-
         console.log('Sending serialized UserOperation:', JSON.stringify(serializedUserOp, null, 2));
 
         // Send to bundler
