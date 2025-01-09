@@ -189,6 +189,14 @@ export function useSendTransaction() {
           throw new Error('Network not supported');
         }
 
+        // Check wallet deployment status
+        const isDeployed = await verifyDeployment(address, network.id);
+        if (!isDeployed) {
+          console.log('Smart wallet not deployed, deploying now...');
+          await deploySmartWallet(address, network.id, privateKey || '');
+          console.log('Smart wallet deployed successfully');
+        }
+
         // Create transfer calldata
         const callData = encodeFunctionData({
           abi: [{
