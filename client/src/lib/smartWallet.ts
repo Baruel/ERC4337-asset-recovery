@@ -82,39 +82,24 @@ export async function generateInitCode(ownerAddress: string, chainId: number): P
     ? factoryAddress.toLowerCase()
     : `0x${factoryAddress}`;
 
-  if (formattedFactoryAddress.length !== 42) {
-    throw new Error(`Invalid factory address length: ${formattedFactoryAddress}`);
-  }
-
   // Encode the createAccount function call
-  const initCode = encodeFunctionData({
+  const createAccountData = encodeFunctionData({
     abi: FACTORY_ABI,
     functionName: 'createAccount',
     args: [ownerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
   });
 
-  console.log('Generated initCode parameters:', {
+  // Concatenate factory address with encoded function data
+  const initCode = formattedFactoryAddress + createAccountData.slice(2);
+
+  console.log('Generated initCode:', {
     factoryAddress: formattedFactoryAddress,
     ownerAddress,
     chainId,
     initCode
   });
 
-  // Concatenate factory address with encoded function data
-  return formattedFactoryAddress + initCode.slice(2);
-}
-
-// Function to sign messages for the smart wallet
-export async function signMessage(message: string, privateKey: string): Promise<string> {
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
-  const client = createWalletClient({
-    account,
-    chain: mainnet,
-    transport: http()
-  });
-
-  const signature = await client.signMessage({ message });
-  return signature;
+  return initCode;
 }
 
 // Function to deploy the smart wallet with proper gas estimation and verification
@@ -130,6 +115,7 @@ export async function deploySmartWallet(
 
   // First compute the expected address
   const expectedAddress = await computeSmartWalletAddress(ownerAddress, chainId);
+  console.log('Expected wallet address:', expectedAddress);
 
   // Check if already deployed
   const isDeployed = await verifyDeployment(expectedAddress, chainId);
@@ -138,43 +124,70 @@ export async function deploySmartWallet(
     return expectedAddress;
   }
 
+  // Generate initCode for deployment
+  const initCode = await generateInitCode(ownerAddress, chainId);
+
   // Estimate deployment gas
   const gasEstimate = await estimateDeploymentGas(factoryAddress, ownerAddress, chainId);
 
-  // Generate deployment transaction
-  const initCode = await generateInitCode(ownerAddress, chainId);
-
-  // Create deployment transaction
+  // Create deployment UserOperation
   const deploymentTx = {
     sender: expectedAddress,
     nonce: BigInt(0),
     initCode,
-    callData: '0x',
+    callData: '0x', // Empty callData for deployment
     callGasLimit: gasEstimate,
-    verificationGasLimit: BigInt(500000), // Conservative estimate
-    preVerificationGas: BigInt(50000),    // Conservative estimate
-    maxFeePerGas: BigInt(5000000000),     // 5 gwei
+    verificationGasLimit: BigInt(400000), // Conservative estimate for deployment
+    preVerificationGas: BigInt(50000), // Standard pre-verification gas
+    maxFeePerGas: BigInt(5000000000), // 5 gwei
     maxPriorityFeePerGas: BigInt(5000000000), // 5 gwei
-    paymasterAndData: '0x'
+    paymasterAndData: '0x' // No paymaster for now
   };
 
+  console.log('Sending deployment UserOperation:', JSON.stringify(deploymentTx, null, 2));
+
   // Track deployment with retries
-  const result = await trackDeployment(
-    fetch('/api/send-user-operation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userOp: deploymentTx,
-        network: chainId
+  try {
+    const result = await trackDeployment(
+      fetch('/api/send-user-operation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userOp: deploymentTx,
+          chainId: chainId
+        })
       })
-    })
-  );
+    );
 
-  // Verify deployment success
-  const verificationResult = await verifyDeployment(expectedAddress, chainId);
-  if (!verificationResult) {
-    throw new Error('Deployment verification failed');
+    // Wait for deployment confirmation
+    let attempts = 0;
+    const maxAttempts = 10;
+    while (attempts < maxAttempts) {
+      const isConfirmed = await verifyDeployment(expectedAddress, chainId);
+      if (isConfirmed) {
+        console.log('Wallet deployment confirmed at:', expectedAddress);
+        return expectedAddress;
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between checks
+      attempts++;
+    }
+
+    throw new Error('Deployment verification timeout');
+  } catch (error) {
+    console.error('Deployment failed:', error);
+    throw error;
   }
+}
 
-  return expectedAddress;
+// Function to sign messages for the smart wallet
+export async function signMessage(message: string, privateKey: string): Promise<string> {
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const client = createWalletClient({
+    account,
+    chain: mainnet,
+    transport: http()
+  });
+
+  const signature = await client.signMessage({ message });
+  return signature;
 }

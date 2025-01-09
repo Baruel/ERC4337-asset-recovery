@@ -268,20 +268,24 @@ export function registerRoutes(app: Express): Server {
   // Updated send-user-operation endpoint with enhanced error handling
   app.post('/api/send-user-operation', async (req, res) => {
     try {
-      const { userOp, network } = req.body;
-      const entryPoint = ENTRY_POINT_ADDRESSES[network as keyof typeof ENTRY_POINT_ADDRESSES];
+      const { userOp, chainId } = req.body;
 
-      if (!entryPoint) {
-        throw new Error(`Unsupported network: ${network}`);
+      if (!chainId) {
+        throw new Error('Missing chainId parameter');
       }
 
-      console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
+      const entryPoint = ENTRY_POINT_ADDRESSES[chainId as keyof typeof ENTRY_POINT_ADDRESSES];
+      if (!entryPoint) {
+        throw new Error(`Unsupported chain ID: ${chainId}`);
+      }
+
+      console.log(`Sending UserOperation to network ${chainId} via Alchemy bundler`);
+      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
 
       // Ensure userOp is properly serialized before logging and sending
       const serializedUserOp = serializeBigIntValues(userOp);
-      console.log('UserOperation:', JSON.stringify(serializedUserOp, null, 2));
 
-      const result = await bundlerProvider.sendUserOperation(serializedUserOp, entryPoint, network);
+      const result = await bundlerProvider.sendUserOperation(serializedUserOp, entryPoint, chainId);
 
       // Serialize any BigInt values in the response
       const serializedResult = serializeBigIntValues(result);
@@ -291,9 +295,9 @@ export function registerRoutes(app: Express): Server {
 
       // Get the error context
       const context = {
-        network,
-        entryPoint: ENTRY_POINT_ADDRESSES[network as keyof typeof ENTRY_POINT_ADDRESSES],
-        userOp: serializeBigIntValues(userOp),
+        chainId: req.body.chainId,
+        entryPoint: req.body.chainId ? ENTRY_POINT_ADDRESSES[req.body.chainId as keyof typeof ENTRY_POINT_ADDRESSES] : undefined,
+        userOp: serializeBigIntValues(req.body.userOp),
         path: '/api/send-user-operation',
         timestamp: new Date().toISOString()
       };
