@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData, keccak256, toBytes } from 'viem';
+import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
 
 interface WalletState {
   address: string | null;
@@ -90,29 +90,28 @@ export function useTransactionHistory(address: string) {
 export function useSendTransaction() {
   const { privateKey, smartWalletAddress } = useWalletStore();
 
-  const signUserOp = async (userOp: any, entryPoint: string) => {
+  const signUserOp = async (userOp: any) => {
     if (!privateKey) throw new Error('No private key available');
 
-    // Hash the user operation
-    const encodedUserOp = encodeAbiParameters(
-      parseAbiParameters('address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData'),
-      [{
-        sender: userOp.sender,
-        nonce: userOp.nonce,
-        initCode: userOp.initCode,
-        callData: userOp.callData,
-        callGasLimit: userOp.callGasLimit,
-        verificationGasLimit: userOp.verificationGasLimit,
-        preVerificationGas: userOp.preVerificationGas,
-        maxFeePerGas: userOp.maxFeePerGas,
-        maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
-        paymasterAndData: userOp.paymasterAndData
-      }]
-    );
+    // Pack the parameters in the correct order for EIP-4337
+    const packed = concat([
+      toBytes(userOp.sender),
+      toBytes(userOp.nonce),
+      toBytes(userOp.initCode),
+      toBytes(userOp.callData),
+      toBytes(userOp.callGasLimit),
+      toBytes(userOp.verificationGasLimit),
+      toBytes(userOp.preVerificationGas),
+      toBytes(userOp.maxFeePerGas),
+      toBytes(userOp.maxPriorityFeePerGas),
+      toBytes(userOp.paymasterAndData)
+    ]);
 
-    const userOpHash = keccak256(encodedUserOp);
-    console.log('User operation hash:', userOpHash);
+    // Hash the packed parameters
+    const userOpHash = keccak256(packed);
+    console.log('Generated user operation hash:', userOpHash);
 
+    // Sign the hash
     const account = privateKeyToAccount(privateKey as `0x${string}`);
     const client = createWalletClient({
       account,
@@ -177,14 +176,13 @@ export function useSendTransaction() {
         console.log('Created user operation:', userOp);
 
         // Sign the user operation
-        const entryPoint = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789';
-        const signature = await signUserOp(userOp, entryPoint);
-        userOp.signature = signature;
+        const signature = await signUserOp(userOp);
+        const signedUserOp = { ...userOp, signature };
 
         console.log('Sending signed UserOperation:', {
           network: network.name,
           chainId: network.id,
-          userOp
+          userOp: signedUserOp
         });
 
         // Send to bundler
@@ -194,7 +192,7 @@ export function useSendTransaction() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            userOp,
+            userOp: signedUserOp,
             network: network.id
           }),
         });
