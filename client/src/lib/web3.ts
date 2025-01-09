@@ -90,14 +90,14 @@ export function useTransactionHistory(address: string) {
 function serializeUserOp(userOp: any) {
   return {
     sender: userOp.sender,
-    nonce: `0x${userOp.nonce.toString(16)}`,
+    nonce: "0x" + userOp.nonce.toString(16),
     initCode: userOp.initCode,
     callData: userOp.callData,
-    callGasLimit: `0x${userOp.callGasLimit.toString(16)}`,
-    verificationGasLimit: `0x${userOp.verificationGasLimit.toString(16)}`,
-    preVerificationGas: `0x${userOp.preVerificationGas.toString(16)}`,
-    maxFeePerGas: `0x${userOp.maxFeePerGas.toString(16)}`,
-    maxPriorityFeePerGas: `0x${userOp.maxPriorityFeePerGas.toString(16)}`,
+    callGasLimit: "0x" + userOp.callGasLimit.toString(16),
+    verificationGasLimit: "0x" + userOp.verificationGasLimit.toString(16),
+    preVerificationGas: "0x" + userOp.preVerificationGas.toString(16),
+    maxFeePerGas: "0x" + userOp.maxFeePerGas.toString(16),
+    maxPriorityFeePerGas: "0x" + userOp.maxPriorityFeePerGas.toString(16),
     paymasterAndData: userOp.paymasterAndData,
     signature: userOp.signature
   };
@@ -113,14 +113,14 @@ export function useSendTransaction() {
     // Pack the parameters in the correct order for EIP-4337
     const packed = concat([
       toBytes(userOp.sender),
-      toBytes('0x' + userOp.nonce.toString(16)),
+      toBytes("0x" + userOp.nonce.toString(16)),
       toBytes(userOp.initCode),
       toBytes(userOp.callData),
-      toBytes('0x' + userOp.callGasLimit.toString(16)),
-      toBytes('0x' + userOp.verificationGasLimit.toString(16)),
-      toBytes('0x' + userOp.preVerificationGas.toString(16)),
-      toBytes('0x' + userOp.maxFeePerGas.toString(16)),
-      toBytes('0x' + userOp.maxPriorityFeePerGas.toString(16)),
+      toBytes("0x" + userOp.callGasLimit.toString(16)),
+      toBytes("0x" + userOp.verificationGasLimit.toString(16)),
+      toBytes("0x" + userOp.preVerificationGas.toString(16)),
+      toBytes("0x" + userOp.maxFeePerGas.toString(16)),
+      toBytes("0x" + userOp.maxPriorityFeePerGas.toString(16)),
       toBytes(userOp.paymasterAndData)
     ]);
 
