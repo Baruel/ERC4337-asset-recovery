@@ -24,8 +24,7 @@ interface CustomToken {
 }
 
 export default function TokenList({ address }: TokenListProps) {
-  const { smartWalletAddress } = useAccount();
-  const { data: tokens, isLoading, refetch } = useTokenBalances(smartWalletAddress || '');
+  const { data: tokens, isLoading, refetch } = useTokenBalances(address);
   const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
 
   // Load custom tokens from localStorage
