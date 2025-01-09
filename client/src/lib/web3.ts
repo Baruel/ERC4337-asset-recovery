@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient } from 'viem';
+import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData } from 'viem';
 
 interface WalletState {
   address: string | null;
@@ -11,6 +11,43 @@ interface WalletState {
   connect: (privateKey: string, smartWalletAddress: string) => Promise<void>;
   disconnect: () => void;
 }
+
+// ERC-4337 EntryPoint ABI for handling UserOperation
+const ENTRY_POINT_ABI = [{
+  name: 'handleOps',
+  type: 'function',
+  stateMutability: 'payable',
+  inputs: [{
+    name: 'ops',
+    type: 'tuple[]',
+    components: [
+      { name: 'sender', type: 'address' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'initCode', type: 'bytes' },
+      { name: 'callData', type: 'bytes' },
+      { name: 'callGasLimit', type: 'uint256' },
+      { name: 'verificationGasLimit', type: 'uint256' },
+      { name: 'preVerificationGas', type: 'uint256' },
+      { name: 'maxFeePerGas', type: 'uint256' },
+      { name: 'maxPriorityFeePerGas', type: 'uint256' },
+      { name: 'paymasterAndData', type: 'bytes' },
+      { name: 'signature', type: 'bytes' }
+    ]
+  }],
+  outputs: [{ type: 'uint256[]' }]
+}] as const;
+
+// ERC-20 transfer ABI
+const ERC20_TRANSFER_ABI = [{
+  name: 'transfer',
+  type: 'function',
+  stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'recipient', type: 'address' },
+    { name: 'amount', type: 'uint256' }
+  ],
+  outputs: [{ type: 'bool' }]
+}] as const;
 
 // Define supported networks
 export const SUPPORTED_NETWORKS = [
@@ -98,10 +135,81 @@ export function useTransactionHistory(address: string) {
 
 // Hook for sending transactions
 export function useSendTransaction() {
+  const { privateKey, smartWalletAddress } = useWalletStore();
+
   return {
-    mutateAsync: async (values: any) => {
-      // Implementation will be added later
-      console.log('Sending transaction:', values);
+    mutateAsync: async (values: {
+      recipient: string;
+      amount: string;
+      network: string;
+      token: string;
+    }) => {
+      try {
+        if (!privateKey || !smartWalletAddress) {
+          throw new Error('Wallet not connected');
+        }
+
+        // Find the selected network
+        const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
+        if (!network) {
+          throw new Error('Network not supported');
+        }
+
+        // Create transfer calldata
+        const callData = encodeFunctionData({
+          abi: ERC20_TRANSFER_ABI,
+          functionName: 'transfer',
+          args: [values.recipient as `0x${string}`, BigInt(values.amount)]
+        });
+
+        // Create UserOperation
+        const userOp = {
+          sender: smartWalletAddress,
+          nonce: BigInt(0), // Should be fetched from the smart wallet contract
+          initCode: '0x',
+          callData,
+          callGasLimit: BigInt(100000),
+          verificationGasLimit: BigInt(100000),
+          preVerificationGas: BigInt(21000),
+          maxFeePerGas: BigInt(1000000000),
+          maxPriorityFeePerGas: BigInt(1000000000),
+          paymasterAndData: '0x',
+          signature: '0x' // Will be filled after signing
+        };
+
+        // Sign the UserOperation
+        const account = privateKeyToAccount(privateKey as `0x${string}`);
+        const client = createWalletClient({
+          account,
+          chain: network,
+          transport: http()
+        });
+
+        // TODO: Add proper UserOperation signing
+        // This is a placeholder for the actual signing process
+        userOp.signature = '0x1234';
+
+        // Send to bundler
+        const response = await fetch('/api/send-user-operation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userOp,
+            network: network.id
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to send transaction');
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error('Transaction error:', error);
+        throw error;
+      }
     },
     isLoading: false
   };
