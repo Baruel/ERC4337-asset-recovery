@@ -7,7 +7,17 @@ import { createBundlerProvider } from './bundler/providers';
 // Network configurations with RPC URLs
 const NETWORKS = {
   1: mainnet,
-  137: polygon,
+  137: {
+    ...polygon,
+    rpcUrls: {
+      default: {
+        http: ['https://polygon-rpc.com']
+      },
+      public: {
+        http: ['https://polygon-rpc.com']
+      }
+    }
+  },
   42161: arbitrum,
   10: optimism,
   8453: base,
@@ -153,7 +163,9 @@ export function registerRoutes(app: Express): Server {
 
       // Special logging for Polygon USDC
       if (chainId === 137 && tokenAddress === '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359') {
-        console.log('Fetching Polygon USDC balance');
+        console.log('Fetching Polygon USDC balance with detailed logging');
+        console.log('Network:', NETWORKS[137].name);
+        console.log('RPC URL:', NETWORKS[137].rpcUrls.default.http[0]);
       }
 
       const chain = NETWORKS[chainId as keyof typeof NETWORKS];
@@ -163,15 +175,13 @@ export function registerRoutes(app: Express): Server {
 
       const client = createPublicClient({
         chain,
-        transport: http({
-          retryCount: 3,
-          timeout: 30000
-        })
+        transport: http(chain.rpcUrls.default.http[0])
       });
 
-      // First get token decimals
+      // First get token decimals for proper formatting
+      let decimals = 18; // default
       try {
-        const decimals = await client.readContract({
+        decimals = await client.readContract({
           address: tokenAddress as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'decimals'
@@ -181,20 +191,29 @@ export function registerRoutes(app: Express): Server {
         console.warn(`Failed to fetch decimals for token ${tokenAddress}:`, error);
       }
 
-      // Then get balance with more detailed logging
-      const balance = await client.readContract({
+      // Create the balance query parameters
+      const balanceParams = {
         address: tokenAddress as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'balanceOf',
         args: [userAddress as `0x${string}`]
-      });
+      };
 
-      console.log(`Raw balance result for ${tokenAddress} on ${chain.name}: ${balance.toString()}`);
+      console.log('Balance query params:', JSON.stringify(balanceParams, null, 2));
 
-      res.json({ balance: balance.toString() });
+      // Then get balance with more detailed logging
+      const balance = await client.readContract(balanceParams);
+
+      console.log(`Raw balance result for ${tokenAddress}: ${balance.toString()}`);
+      console.log(`Formatted balance (with ${decimals} decimals): ${Number(balance) / Math.pow(10, decimals)}`);
+
+      res.json({ balance: balance.toString(), decimals });
     } catch (error) {
       console.error('Error fetching token balance:', error);
-      res.status(500).json({ error: 'Failed to fetch token balance' });
+      res.status(500).json({ 
+        error: 'Failed to fetch token balance',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
