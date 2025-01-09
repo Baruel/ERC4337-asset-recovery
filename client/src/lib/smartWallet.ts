@@ -1,6 +1,7 @@
 import { createWalletClient, encodeFunctionData, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
+import { estimateDeploymentGas, trackDeployment, verifyDeployment } from './deployment';
 
 // Constants for Account Abstraction
 export const SIMPLE_ACCOUNT_FACTORY = {
@@ -114,4 +115,66 @@ export async function signMessage(message: string, privateKey: string): Promise<
 
   const signature = await client.signMessage({ message });
   return signature;
+}
+
+// Function to deploy the smart wallet with proper gas estimation and verification
+export async function deploySmartWallet(
+  ownerAddress: string,
+  chainId: number,
+  privateKey: string
+): Promise<string> {
+  const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
+  if (!factoryAddress) {
+    throw new Error(`No factory address for chain ID ${chainId}`);
+  }
+
+  // First compute the expected address
+  const expectedAddress = await computeSmartWalletAddress(ownerAddress, chainId);
+
+  // Check if already deployed
+  const isDeployed = await verifyDeployment(expectedAddress, chainId);
+  if (isDeployed) {
+    console.log('Smart wallet already deployed at:', expectedAddress);
+    return expectedAddress;
+  }
+
+  // Estimate deployment gas
+  const gasEstimate = await estimateDeploymentGas(factoryAddress, ownerAddress, chainId);
+
+  // Generate deployment transaction
+  const initCode = await generateInitCode(ownerAddress, chainId);
+
+  // Create deployment transaction
+  const deploymentTx = {
+    sender: expectedAddress,
+    nonce: BigInt(0),
+    initCode,
+    callData: '0x',
+    callGasLimit: gasEstimate,
+    verificationGasLimit: BigInt(500000), // Conservative estimate
+    preVerificationGas: BigInt(50000),    // Conservative estimate
+    maxFeePerGas: BigInt(5000000000),     // 5 gwei
+    maxPriorityFeePerGas: BigInt(5000000000), // 5 gwei
+    paymasterAndData: '0x'
+  };
+
+  // Track deployment with retries
+  const result = await trackDeployment(
+    fetch('/api/send-user-operation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userOp: deploymentTx,
+        network: chainId
+      })
+    })
+  );
+
+  // Verify deployment success
+  const verificationResult = await verifyDeployment(expectedAddress, chainId);
+  if (!verificationResult) {
+    throw new Error('Deployment verification failed');
+  }
+
+  return expectedAddress;
 }
