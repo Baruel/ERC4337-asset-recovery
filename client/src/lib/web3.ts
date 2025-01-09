@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, encodeAbiParameters, parseAbiParameters, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
+import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
 
 interface WalletState {
   address: string | null;
@@ -88,18 +88,23 @@ export function useTransactionHistory(address: string) {
 
 // Convert BigInt values to hex strings for serialization
 function serializeUserOp(userOp: any) {
+  const formatHex = (value: bigint | string) => {
+    const hex = typeof value === 'bigint' ? value.toString(16) : value;
+    return hex.startsWith('0x') ? hex : `0x${hex}`;
+  };
+
   return {
-    sender: userOp.sender,
-    nonce: userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : `0x${userOp.nonce.toString(16)}`,
-    initCode: userOp.initCode,
-    callData: userOp.callData,
-    callGasLimit: userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : `0x${userOp.callGasLimit.toString(16)}`,
-    verificationGasLimit: userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : `0x${userOp.verificationGasLimit.toString(16)}`,
-    preVerificationGas: userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : `0x${userOp.preVerificationGas.toString(16)}`,
-    maxFeePerGas: userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : `0x${userOp.maxFeePerGas.toString(16)}`,
-    maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : `0x${userOp.maxPriorityFeePerGas.toString(16)}`,
-    paymasterAndData: userOp.paymasterAndData,
-    signature: userOp.signature
+    sender: formatHex(userOp.sender),
+    nonce: formatHex(userOp.nonce),
+    initCode: formatHex(userOp.initCode),
+    callData: formatHex(userOp.callData),
+    callGasLimit: formatHex(userOp.callGasLimit),
+    verificationGasLimit: formatHex(userOp.verificationGasLimit),
+    preVerificationGas: formatHex(userOp.preVerificationGas),
+    maxFeePerGas: formatHex(userOp.maxFeePerGas),
+    maxPriorityFeePerGas: formatHex(userOp.maxPriorityFeePerGas),
+    paymasterAndData: formatHex(userOp.paymasterAndData),
+    signature: formatHex(userOp.signature || '0x')
   };
 }
 
@@ -110,18 +115,23 @@ export function useSendTransaction() {
   const signUserOp = async (userOp: any) => {
     if (!privateKey) throw new Error('No private key available');
 
+    const formatHex = (value: bigint | string) => {
+      const hex = typeof value === 'bigint' ? value.toString(16) : value;
+      return hex.startsWith('0x') ? hex : `0x${hex}`;
+    };
+
     // Pack the parameters in the correct order for EIP-4337
     const packed = concat([
-      toBytes(userOp.sender),
-      toBytes(userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : `0x${userOp.nonce.toString(16)}`),
-      toBytes(userOp.initCode),
-      toBytes(userOp.callData),
-      toBytes(userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : `0x${userOp.callGasLimit.toString(16)}`),
-      toBytes(userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : `0x${userOp.verificationGasLimit.toString(16)}`),
-      toBytes(userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : `0x${userOp.preVerificationGas.toString(16)}`),
-      toBytes(userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : `0x${userOp.maxFeePerGas.toString(16)}`),
-      toBytes(userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : `0x${userOp.maxPriorityFeePerGas.toString(16)}`),
-      toBytes(userOp.paymasterAndData)
+      toBytes(formatHex(userOp.sender)),
+      toBytes(formatHex(userOp.nonce)),
+      toBytes(formatHex(userOp.initCode)),
+      toBytes(formatHex(userOp.callData)),
+      toBytes(formatHex(userOp.callGasLimit)),
+      toBytes(formatHex(userOp.verificationGasLimit)),
+      toBytes(formatHex(userOp.preVerificationGas)),
+      toBytes(formatHex(userOp.maxFeePerGas)),
+      toBytes(formatHex(userOp.maxPriorityFeePerGas)),
+      toBytes(formatHex(userOp.paymasterAndData))
     ]);
 
     // Hash the packed parameters
@@ -176,10 +186,10 @@ export function useSendTransaction() {
           args: [values.recipient as `0x${string}`, BigInt(values.amount)]
         });
 
-        // Create UserOperation
+        // Create UserOperation with properly formatted values
         const userOp = {
-          sender: smartWalletAddress as `0x${string}`,
-          nonce: BigInt(0), // Should be fetched from the smart wallet contract
+          sender: smartWalletAddress,
+          nonce: BigInt(0),
           initCode: '0x',
           callData,
           callGasLimit: BigInt(100000),
