@@ -86,6 +86,23 @@ export function useTransactionHistory(address: string) {
   };
 }
 
+// Convert BigInt values to hex strings for serialization
+function serializeUserOp(userOp: any) {
+  return {
+    sender: userOp.sender,
+    nonce: `0x${userOp.nonce.toString(16)}`,
+    initCode: userOp.initCode,
+    callData: userOp.callData,
+    callGasLimit: `0x${userOp.callGasLimit.toString(16)}`,
+    verificationGasLimit: `0x${userOp.verificationGasLimit.toString(16)}`,
+    preVerificationGas: `0x${userOp.preVerificationGas.toString(16)}`,
+    maxFeePerGas: `0x${userOp.maxFeePerGas.toString(16)}`,
+    maxPriorityFeePerGas: `0x${userOp.maxPriorityFeePerGas.toString(16)}`,
+    paymasterAndData: userOp.paymasterAndData,
+    signature: userOp.signature
+  };
+}
+
 // Hook for sending transactions
 export function useSendTransaction() {
   const { privateKey, smartWalletAddress } = useWalletStore();
@@ -96,14 +113,14 @@ export function useSendTransaction() {
     // Pack the parameters in the correct order for EIP-4337
     const packed = concat([
       toBytes(userOp.sender),
-      toBytes(userOp.nonce),
+      toBytes('0x' + userOp.nonce.toString(16)),
       toBytes(userOp.initCode),
       toBytes(userOp.callData),
-      toBytes(userOp.callGasLimit),
-      toBytes(userOp.verificationGasLimit),
-      toBytes(userOp.preVerificationGas),
-      toBytes(userOp.maxFeePerGas),
-      toBytes(userOp.maxPriorityFeePerGas),
+      toBytes('0x' + userOp.callGasLimit.toString(16)),
+      toBytes('0x' + userOp.verificationGasLimit.toString(16)),
+      toBytes('0x' + userOp.preVerificationGas.toString(16)),
+      toBytes('0x' + userOp.maxFeePerGas.toString(16)),
+      toBytes('0x' + userOp.maxPriorityFeePerGas.toString(16)),
       toBytes(userOp.paymasterAndData)
     ]);
 
@@ -179,10 +196,13 @@ export function useSendTransaction() {
         const signature = await signUserOp(userOp);
         const signedUserOp = { ...userOp, signature };
 
-        console.log('Sending signed UserOperation:', {
+        // Serialize BigInt values before sending to API
+        const serializedUserOp = serializeUserOp(signedUserOp);
+
+        console.log('Sending serialized UserOperation:', {
           network: network.name,
           chainId: network.id,
-          userOp: signedUserOp
+          userOp: serializedUserOp
         });
 
         // Send to bundler
@@ -192,7 +212,7 @@ export function useSendTransaction() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            userOp: signedUserOp,
+            userOp: serializedUserOp,
             network: network.id
           }),
         });
