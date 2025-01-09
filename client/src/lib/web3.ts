@@ -90,14 +90,14 @@ export function useTransactionHistory(address: string) {
 function serializeUserOp(userOp: any) {
   return {
     sender: userOp.sender,
-    nonce: "0x" + userOp.nonce.toString(16),
+    nonce: userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : `0x${userOp.nonce.toString(16)}`,
     initCode: userOp.initCode,
     callData: userOp.callData,
-    callGasLimit: "0x" + userOp.callGasLimit.toString(16),
-    verificationGasLimit: "0x" + userOp.verificationGasLimit.toString(16),
-    preVerificationGas: "0x" + userOp.preVerificationGas.toString(16),
-    maxFeePerGas: "0x" + userOp.maxFeePerGas.toString(16),
-    maxPriorityFeePerGas: "0x" + userOp.maxPriorityFeePerGas.toString(16),
+    callGasLimit: userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : `0x${userOp.callGasLimit.toString(16)}`,
+    verificationGasLimit: userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : `0x${userOp.verificationGasLimit.toString(16)}`,
+    preVerificationGas: userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : `0x${userOp.preVerificationGas.toString(16)}`,
+    maxFeePerGas: userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : `0x${userOp.maxFeePerGas.toString(16)}`,
+    maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : `0x${userOp.maxPriorityFeePerGas.toString(16)}`,
     paymasterAndData: userOp.paymasterAndData,
     signature: userOp.signature
   };
@@ -113,14 +113,14 @@ export function useSendTransaction() {
     // Pack the parameters in the correct order for EIP-4337
     const packed = concat([
       toBytes(userOp.sender),
-      toBytes("0x" + userOp.nonce.toString(16)),
+      toBytes(userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : `0x${userOp.nonce.toString(16)}`),
       toBytes(userOp.initCode),
       toBytes(userOp.callData),
-      toBytes("0x" + userOp.callGasLimit.toString(16)),
-      toBytes("0x" + userOp.verificationGasLimit.toString(16)),
-      toBytes("0x" + userOp.preVerificationGas.toString(16)),
-      toBytes("0x" + userOp.maxFeePerGas.toString(16)),
-      toBytes("0x" + userOp.maxPriorityFeePerGas.toString(16)),
+      toBytes(userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : `0x${userOp.callGasLimit.toString(16)}`),
+      toBytes(userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : `0x${userOp.verificationGasLimit.toString(16)}`),
+      toBytes(userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : `0x${userOp.preVerificationGas.toString(16)}`),
+      toBytes(userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : `0x${userOp.maxFeePerGas.toString(16)}`),
+      toBytes(userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : `0x${userOp.maxPriorityFeePerGas.toString(16)}`),
       toBytes(userOp.paymasterAndData)
     ]);
 
@@ -199,11 +199,7 @@ export function useSendTransaction() {
         // Serialize BigInt values before sending to API
         const serializedUserOp = serializeUserOp(signedUserOp);
 
-        console.log('Sending serialized UserOperation:', {
-          network: network.name,
-          chainId: network.id,
-          userOp: serializedUserOp
-        });
+        console.log('Sending serialized UserOperation:', JSON.stringify(serializedUserOp, null, 2));
 
         // Send to bundler
         const response = await fetch('/api/send-user-operation', {
@@ -217,20 +213,19 @@ export function useSendTransaction() {
           }),
         });
 
-        const responseText = await response.text();
-        console.log('Raw bundler response:', responseText);
-
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Raw bundler response:', errorText);
           let errorDetails;
           try {
-            errorDetails = JSON.parse(responseText).details;
+            errorDetails = JSON.parse(errorText).error?.message || errorText;
           } catch (e) {
-            errorDetails = responseText;
+            errorDetails = errorText;
           }
-          throw new Error(errorDetails || 'Failed to send transaction');
+          throw new Error(errorDetails);
         }
 
-        const result = JSON.parse(responseText);
+        const result = await response.json();
         console.log('Transaction result:', result);
         return result;
       } catch (error) {
