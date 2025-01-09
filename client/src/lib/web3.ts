@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'wagmi/chains';
 import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
+import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes, createPublicClient } from 'viem';
 import { computeSmartWalletAddress, generateInitCode, signMessage } from './smartWallet';
 import { useQuery } from '@tanstack/react-query';
 import { verifyDeployment } from './deployment';
@@ -19,54 +19,13 @@ export const SUPPORTED_NETWORKS = [
   bsc
 ] as const;
 
-interface WalletState {
-  address: string | null;
-  smartWalletAddress: string | null;
-  privateKey: string | null;
-  connect: (privateKey: string) => Promise<void>;
-  disconnect: () => void;
-}
-
-// Create wallet store
-const useWalletStore = create<WalletState>((set) => ({
-  address: null,
-  smartWalletAddress: null,
-  privateKey: null,
-  connect: async (privateKey: string) => {
-    try {
-      const account = privateKeyToAccount(privateKey as `0x${string}`);
-
-      // For the first network (e.g., Ethereum mainnet), compute the smart wallet address
-      const smartWalletAddress = await computeSmartWalletAddress(account.address, SUPPORTED_NETWORKS[0].id);
-
-      set({
-        address: account.address,
-        smartWalletAddress,
-        privateKey
-      });
-    } catch (error) {
-      console.error('Failed to connect wallet:', error);
-      throw error;
-    }
-  },
-  disconnect: () => {
-    set({
-      address: null,
-      smartWalletAddress: null,
-      privateKey: null
-    });
-  }
-}));
-
 // Initialize wagmi config with all supported networks
 export const config = createConfig({
   chains: SUPPORTED_NETWORKS,
-  transports: Object.fromEntries(
-    SUPPORTED_NETWORKS.map(network => [
-      network.id,
-      http()
-    ])
-  )
+  transports: SUPPORTED_NETWORKS.reduce((acc, network) => ({
+    ...acc,
+    [network.id]: http()
+  }), {} as Record<(typeof SUPPORTED_NETWORKS)[number]['id'], ReturnType<typeof http>>)
 });
 
 // Hook for account management
@@ -103,9 +62,23 @@ export function useTransactionHistory(address: string) {
 
 // Convert BigInt values to hex strings for serialization
 function serializeUserOp(userOp: any) {
-  const formatHex = (value: bigint | string) => {
-    const hex = typeof value === 'bigint' ? value.toString(16) : value;
-    return hex.startsWith('0x') ? hex : `0x${hex}`;
+  const formatHex = (value: bigint | string | null | undefined) => {
+    if (value === null || value === undefined) {
+      return '0x';
+    }
+    if (typeof value === 'bigint') {
+      return `0x${value.toString(16)}`;
+    }
+    if (typeof value === 'string') {
+      if (value.startsWith('0x')) {
+        return value;
+      }
+      if (value.match(/^[0-9]+$/)) {
+        return `0x${BigInt(value).toString(16)}`;
+      }
+      return `0x${value}`;
+    }
+    return '0x';
   };
 
   const serialized = {
@@ -119,17 +92,11 @@ function serializeUserOp(userOp: any) {
     maxFeePerGas: formatHex(userOp.maxFeePerGas),
     maxPriorityFeePerGas: formatHex(userOp.maxPriorityFeePerGas),
     paymasterAndData: formatHex(userOp.paymasterAndData),
-    signature: formatHex(userOp.signature || '0x')
+    signature: formatHex(userOp.signature)
   };
 
-  Object.entries(serialized).forEach(([key, value]) => {
-    if (!value.startsWith('0x')) {
-      throw new Error(`Invalid ${key}: must start with 0x`);
-    }
-    if (key === 'sender' && value.length !== 42) {
-      throw new Error('Invalid sender address length');
-    }
-  });
+  // Log the serialized operation for debugging
+  console.log('Serialized UserOperation:', serialized);
 
   return serialized;
 }
@@ -236,8 +203,8 @@ export function useSendTransaction() {
         // Create UserOperation with increased gas values
         const userOp = {
           sender: smartWalletAddress || address,
-          nonce,
-          initCode,
+          nonce: nonce,
+          initCode: initCode,
           callData,
           callGasLimit: BigInt(500000),
           verificationGasLimit: BigInt(500000),
@@ -284,9 +251,7 @@ export function useSendTransaction() {
           body: JSON.stringify({
             userOp: serializedUserOp,
             network: network.id
-          }, (_, value) => 
-            typeof value === 'bigint' ? value.toString() : value
-          ),
+          })
         });
 
         if (!response.ok) {
@@ -367,7 +332,7 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
     }
 
     // Verify if the transaction was successful
-    if (receipt.status === 1) { //Corrected status check
+    if (receipt.status === 'success' || receipt.status === 1) {
       return { success: true };
     } else {
       return { success: false, error: 'Transaction failed on-chain' };
@@ -380,3 +345,42 @@ export async function verifyUserOperation(txResponse: any, chainId: number) {
     };
   }
 }
+
+interface WalletState {
+  address: string | null;
+  smartWalletAddress: string | null;
+  privateKey: string | null;
+  connect: (privateKey: string) => Promise<void>;
+  disconnect: () => void;
+}
+
+// Create wallet store
+const useWalletStore = create<WalletState>((set) => ({
+  address: null,
+  smartWalletAddress: null,
+  privateKey: null,
+  connect: async (privateKey: string) => {
+    try {
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+      // For the first network (e.g., Ethereum mainnet), compute the smart wallet address
+      const smartWalletAddress = await computeSmartWalletAddress(account.address, SUPPORTED_NETWORKS[0].id);
+
+      set({
+        address: account.address,
+        smartWalletAddress,
+        privateKey
+      });
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+      throw error;
+    }
+  },
+  disconnect: () => {
+    set({
+      address: null,
+      smartWalletAddress: null,
+      privateKey: null
+    });
+  }
+}));

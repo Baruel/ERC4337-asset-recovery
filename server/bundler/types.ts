@@ -1,13 +1,13 @@
 export interface UserOperation {
   sender: string;
-  nonce: bigint;
+  nonce: string; // Changed from bigint to string for proper serialization
   initCode: string;
   callData: string;
-  callGasLimit: bigint;
-  verificationGasLimit: bigint;
-  preVerificationGas: bigint;
-  maxFeePerGas: bigint;
-  maxPriorityFeePerGas: bigint;
+  callGasLimit: string; // Changed from bigint to string
+  verificationGasLimit: string; // Changed from bigint to string
+  preVerificationGas: string; // Changed from bigint to string
+  maxFeePerGas: string; // Changed from bigint to string
+  maxPriorityFeePerGas: string; // Changed from bigint to string
   paymasterAndData: string;
   signature: string;
 }
@@ -20,5 +20,4 @@ export interface BundlerConfig {
   type: string;
   apiKey?: string;
   baseUrl?: string;
-  // Add other provider-specific configuration options as needed
 }

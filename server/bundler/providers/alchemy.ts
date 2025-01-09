@@ -13,31 +13,29 @@ export class AlchemyBundlerProvider implements BundlerProvider {
       throw new Error('Invalid sender address format');
     }
 
-    // Validate nonce format
-    if (!userOp.nonce?.toString().match(/^0x[0-9a-fA-F]+$/)) {
-      throw new Error('Invalid nonce format');
-    }
+    // Helper to validate hex format
+    const isValidHex = (value: string | undefined | null): boolean => {
+      if (!value) return true; // Allow empty values
+      return value.toString().match(/^0x([0-9a-fA-F]*)?$/) !== null;
+    };
 
-    // Validate gas parameters
-    const gasParams = [
-      'callGasLimit',
-      'verificationGasLimit',
-      'preVerificationGas',
-      'maxFeePerGas',
-      'maxPriorityFeePerGas'
-    ];
+    // Fields that must be validated
+    const fields = {
+      nonce: userOp.nonce,
+      callGasLimit: userOp.callGasLimit,
+      verificationGasLimit: userOp.verificationGasLimit,
+      preVerificationGas: userOp.preVerificationGas,
+      maxFeePerGas: userOp.maxFeePerGas,
+      maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
+      initCode: userOp.initCode,
+      callData: userOp.callData,
+      paymasterAndData: userOp.paymasterAndData,
+      signature: userOp.signature
+    };
 
-    for (const param of gasParams) {
-      if (!userOp[param as keyof UserOperation]?.toString().match(/^0x[0-9a-fA-F]+$/)) {
-        throw new Error(`Invalid ${param} format`);
-      }
-    }
-
-    // Validate callData and other hex fields
-    const hexFields = ['initCode', 'callData', 'paymasterAndData', 'signature'];
-    for (const field of hexFields) {
-      if (!userOp[field as keyof UserOperation]?.toString().match(/^0x([0-9a-fA-F]*)?$/)) {
-        throw new Error(`Invalid ${field} format`);
+    for (const [field, value] of Object.entries(fields)) {
+      if (!isValidHex(value?.toString())) {
+        throw new Error(`Invalid ${field} format: ${value}`);
       }
     }
   }
@@ -49,23 +47,12 @@ export class AlchemyBundlerProvider implements BundlerProvider {
 
       console.log(`[Alchemy] Sending UserOperation to chain ${chainId}`);
       console.log(`[Alchemy] EntryPoint: ${entryPoint}`);
-      console.log(`[Alchemy] Chain Prefix: ${chainPrefix}`);
 
-      // Validate UserOperation before formatting
+      // Validate UserOperation format
       this.validateUserOperation(userOp);
 
-      // Format all numeric fields to hex
-      const formattedUserOp = {
-        ...userOp,
-        nonce: userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : '0x' + userOp.nonce.toString(16),
-        callGasLimit: userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : '0x' + userOp.callGasLimit.toString(16),
-        verificationGasLimit: userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : '0x' + userOp.verificationGasLimit.toString(16),
-        preVerificationGas: userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : '0x' + userOp.preVerificationGas.toString(16),
-        maxFeePerGas: userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : '0x' + userOp.maxFeePerGas.toString(16),
-        maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : '0x' + userOp.maxPriorityFeePerGas.toString(16)
-      };
-
-      console.log(`[Alchemy] Formatted UserOperation:`, JSON.stringify(formattedUserOp, null, 2));
+      // Log the operation for debugging
+      console.log(`[Alchemy] Sending UserOperation:`, JSON.stringify(userOp, null, 2));
 
       const response = await fetch(url, {
         method: 'POST',
@@ -77,25 +64,17 @@ export class AlchemyBundlerProvider implements BundlerProvider {
           id: 1,
           jsonrpc: '2.0',
           method: 'eth_sendUserOperation',
-          params: [formattedUserOp, entryPoint]
+          params: [userOp, entryPoint]
         }),
       });
 
-      const responseText = await response.text();
-      console.log(`[Alchemy] Raw response:`, responseText);
-
       if (!response.ok) {
-        console.error(`[Alchemy] Request failed with status ${response.status}:`, responseText);
-        throw new Error(`Bundler request failed: ${response.status} ${responseText}`);
+        const errorText = await response.text();
+        console.error(`[Alchemy] Request failed:`, errorText);
+        throw new Error(`Bundler request failed: ${response.status} ${errorText}`);
       }
 
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        console.error(`[Alchemy] Failed to parse response:`, e);
-        throw new Error('Invalid response from bundler');
-      }
+      const result = await response.json();
 
       if (result.error) {
         console.error(`[Alchemy] RPC error:`, result.error);

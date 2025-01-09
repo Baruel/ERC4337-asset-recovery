@@ -1,4 +1,5 @@
-import { type UserOperation } from './types';
+import { UserOperation } from './types';
+import { AlchemyBundlerProvider } from './providers/alchemy';
 
 export interface BundlerProvider {
   sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any>;
@@ -37,12 +38,9 @@ export class StackupBundlerProvider implements BundlerProvider {
   }
 }
 
-import { BundlerProvider } from './types';
-import { AlchemyBundlerProvider } from './providers/alchemy';
-
 // Factory to create bundler provider instances
 export function createBundlerProvider(): BundlerProvider {
-  // Using Alchemy provider with the provided API key
+  // Initialize Alchemy provider with API key
   return new AlchemyBundlerProvider({
     apiKey: 'CF0MniJ9y43iEJwhONRcD4lapMIXQFoe'
   });

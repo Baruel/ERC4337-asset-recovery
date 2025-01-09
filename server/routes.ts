@@ -82,6 +82,22 @@ const ERC20_ABI = [
   }
 ] as const;
 
+// Helper function to serialize BigInt values
+function serializeBigIntValues(obj: any): any {
+  if (typeof obj === 'bigint') {
+    return obj.toString();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigIntValues);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [key, serializeBigIntValues(value)])
+    );
+  }
+  return obj;
+}
+
 export function registerRoutes(app: Express): Server {
   // Add endpoint to compute smart wallet address
   app.post('/api/smart-wallet/compute-address', async (req, res) => {
@@ -210,14 +226,14 @@ export function registerRoutes(app: Express): Server {
       res.json({ balance: balance.toString(), decimals });
     } catch (error) {
       console.error('Error fetching token balance:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to fetch token balance',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
 
-  // Updated UserOperation submission endpoint
+  // Updated send-user-operation endpoint with proper serialization
   app.post('/api/send-user-operation', async (req, res) => {
     try {
       const { userOp, network } = req.body;
@@ -228,12 +244,13 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
-      console.log('UserOperation:', JSON.stringify(userOp, (_, value) => 
-        typeof value === 'bigint' ? value.toString() : value
-      , 2));
+      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
 
       const result = await bundlerProvider.sendUserOperation(userOp, entryPoint, network);
-      res.json(result);
+
+      // Serialize any BigInt values in the response
+      const serializedResult = serializeBigIntValues(result);
+      res.json(serializedResult);
     } catch (error) {
       console.error('Error sending UserOperation:', error);
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
