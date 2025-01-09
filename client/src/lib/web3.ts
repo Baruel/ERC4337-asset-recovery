@@ -284,7 +284,9 @@ export function useSendTransaction() {
           body: JSON.stringify({
             userOp: serializedUserOp,
             network: network.id
-          }),
+          }, (_, value) => 
+            typeof value === 'bigint' ? value.toString() : value
+          ),
         });
 
         if (!response.ok) {

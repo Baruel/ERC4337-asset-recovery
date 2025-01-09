@@ -228,7 +228,9 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
-      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
+      console.log('UserOperation:', JSON.stringify(userOp, (_, value) => 
+        typeof value === 'bigint' ? value.toString() : value
+      , 2));
 
       const result = await bundlerProvider.sendUserOperation(userOp, entryPoint, network);
       res.json(result);
