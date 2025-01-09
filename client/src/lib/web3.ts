@@ -60,27 +60,55 @@ export function useTransactionHistory(address: string) {
   });
 }
 
+// Helper functions for transaction handling
+async function fetchNonce(address: string, chainId: number): Promise<bigint> {
+  const response = await fetch(`/api/smart-wallet/nonce?address=${address}&chainId=${chainId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch nonce');
+  }
+  return BigInt((await response.text()).trim());
+}
+
+async function fetchEntryPoint(chainId: number): Promise<string> {
+  const response = await fetch(`/api/smart-wallet/entry-point?chainId=${chainId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch entry point address');
+  }
+  const entryPoint = await response.text();
+  return entryPoint.trim().replace(/['"]/g, '');
+}
+
 // Convert BigInt values to hex strings for serialization
 function serializeUserOp(userOp: any) {
-  const formatHex = (value: bigint | string | null | undefined) => {
+  // Helper function to convert any value to a proper hex string
+  const formatHex = (value: bigint | string | number | null | undefined): string => {
     if (value === null || value === undefined) {
       return '0x';
     }
+
+    // Handle different value types
     if (typeof value === 'bigint') {
       return `0x${value.toString(16)}`;
     }
+    if (typeof value === 'number') {
+      return `0x${value.toString(16)}`;
+    }
     if (typeof value === 'string') {
+      // If already hex, return as is
       if (value.startsWith('0x')) {
         return value;
       }
-      if (value.match(/^[0-9]+$/)) {
+      // If numeric string, convert to hex
+      if (/^\d+$/.test(value)) {
         return `0x${BigInt(value).toString(16)}`;
       }
+      // If regular string, convert to hex
       return `0x${value}`;
     }
     return '0x';
   };
 
+  // Serialize all fields
   const serialized = {
     sender: formatHex(userOp.sender),
     nonce: formatHex(userOp.nonce),
@@ -96,7 +124,7 @@ function serializeUserOp(userOp: any) {
   };
 
   // Log the serialized operation for debugging
-  console.log('Serialized UserOperation:', serialized);
+  console.log('Serialized UserOperation:', JSON.stringify(serialized, null, 2));
 
   return serialized;
 }
@@ -159,86 +187,42 @@ export function useSendTransaction() {
           throw new Error('Network not supported');
         }
 
-        // Check wallet deployment status
-        const isDeployed = await verifyDeployment(address, network.id);
-        if (!isDeployed) {
-          console.log('Smart wallet not deployed, deploying now...');
-          await deploySmartWallet(address, network.id, privateKey || '');
-          console.log('Smart wallet deployed successfully');
-        }
+        // Get the current nonce
+        const nonce = await fetchNonce(smartWalletAddress || address, network.id);
 
-        // Create transfer calldata
-        const callData = encodeFunctionData({
-          abi: [{
-            name: 'transfer',
-            type: 'function',
-            stateMutability: 'nonpayable',
-            inputs: [
-              { name: 'recipient', type: 'address' },
-              { name: 'amount', type: 'uint256' }
-            ],
-            outputs: [{ type: 'bool' }]
-          }],
-          functionName: 'transfer',
-          args: [values.recipient as `0x${string}`, BigInt(values.amount)]
-        });
-
-        // Generate initCode if this is a new smart wallet
-        let initCode = '0x';
-        if (!smartWalletAddress) {
-          console.log('No smart wallet found, generating initCode...');
-          initCode = await generateInitCode(address, network.id);
-          console.log('Generated initCode:', initCode);
-        }
-
-        // Fetch the current nonce
-        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress || address}&chainId=${network.id}`);
-        if (!nonceResponse.ok) {
-          throw new Error('Failed to fetch nonce');
-        }
-
-        const nonce = BigInt((await nonceResponse.text()).trim());
-        console.log('Using nonce:', nonce.toString());
-
-        // Create UserOperation with increased gas values
+        // Create the user operation
         const userOp = {
           sender: smartWalletAddress || address,
-          nonce: nonce,
-          initCode: initCode,
-          callData,
-          callGasLimit: BigInt(500000),
-          verificationGasLimit: BigInt(500000),
-          preVerificationGas: BigInt(50000),
-          maxFeePerGas: BigInt(5000000000),
-          maxPriorityFeePerGas: BigInt(5000000000),
+          nonce: nonce.toString(),
+          initCode: '0x',
+          callData: encodeFunctionData({
+            abi: [{
+              name: 'transfer',
+              type: 'function',
+              stateMutability: 'nonpayable',
+              inputs: [
+                { name: 'recipient', type: 'address' },
+                { name: 'amount', type: 'uint256' }
+              ],
+              outputs: [{ type: 'bool' }]
+            }],
+            functionName: 'transfer',
+            args: [values.recipient as `0x${string}`, BigInt(values.amount)]
+          }),
+          callGasLimit: '500000',
+          verificationGasLimit: '500000',
+          preVerificationGas: '50000',
+          maxFeePerGas: '5000000000',
+          maxPriorityFeePerGas: '5000000000',
           paymasterAndData: '0x'
         };
 
-        console.log('Created user operation:', {
-          ...userOp,
-          nonce: userOp.nonce.toString(),
-          callGasLimit: userOp.callGasLimit.toString(),
-          verificationGasLimit: userOp.verificationGasLimit.toString(),
-          preVerificationGas: userOp.preVerificationGas.toString(),
-          maxFeePerGas: userOp.maxFeePerGas.toString(),
-          maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(),
-        });
-
-        // Get the entry point address
-        const entryPointResponse = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`);
-        if (!entryPointResponse.ok) {
-          throw new Error('Failed to fetch entry point address');
-        }
-        const entryPoint = await entryPointResponse.text();
-        const cleanEntryPoint = entryPoint.trim().replace(/['"]/g, '');
-
-        console.log('Using entry point:', cleanEntryPoint);
-
-        // Sign the user operation
-        const signature = await signUserOp(userOp, network.id, cleanEntryPoint, privateKey);
+        // Get entry point and sign the operation
+        const entryPoint = await fetchEntryPoint(network.id);
+        const signature = await signUserOp(userOp, network.id, entryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 
-        // Serialize before sending
+        // Serialize the operation before sending
         const serializedUserOp = serializeUserOp(signedUserOp);
         console.log('Sending serialized UserOperation:', JSON.stringify(serializedUserOp, null, 2));
 
@@ -256,24 +240,15 @@ export function useSendTransaction() {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('Raw bundler response:', errorText);
-          const errorMessage = parseBundlerError(errorText);
-
-          const error = new Error(errorMessage);
-          (error as any).userOperation = serializedUserOp;
-          (error as any).rawError = errorText;
-          throw error;
+          throw new Error(`Failed to send transaction: ${errorText}`);
         }
 
-        const result = await response.json();
-        console.log('Transaction result:', result);
-        return result;
+        return await response.json();
       } catch (error) {
         console.error('Transaction error:', error);
         throw error;
       }
-    },
-    isLoading: false
+    }
   };
 }
 

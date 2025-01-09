@@ -91,9 +91,22 @@ function serializeBigIntValues(obj: any): any {
     return obj.map(serializeBigIntValues);
   }
   if (obj !== null && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj).map(([key, value]) => [key, serializeBigIntValues(value)])
-    );
+    const entries = Object.entries(obj).map(([key, value]) => {
+      if (typeof value === 'bigint') {
+        return [key, value.toString()];
+      }
+      if (typeof value === 'string' && /^\d+$/.test(value)) {
+        // Handle numeric strings that might be BigInt values
+        try {
+          const bigIntValue = BigInt(value);
+          return [key, bigIntValue.toString()];
+        } catch {
+          return [key, value];
+        }
+      }
+      return [key, serializeBigIntValues(value)];
+    });
+    return Object.fromEntries(entries);
   }
   return obj;
 }
@@ -244,9 +257,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
-      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
 
-      const result = await bundlerProvider.sendUserOperation(userOp, entryPoint, network);
+      // Ensure userOp is properly serialized before logging and sending
+      const serializedUserOp = serializeBigIntValues(userOp);
+      console.log('UserOperation:', JSON.stringify(serializedUserOp, null, 2));
+
+      const result = await bundlerProvider.sendUserOperation(serializedUserOp, entryPoint, network);
 
       // Serialize any BigInt values in the response
       const serializedResult = serializeBigIntValues(result);
