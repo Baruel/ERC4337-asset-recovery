@@ -6,7 +6,7 @@ import { estimateDeploymentGas, trackDeployment, verifyDeployment } from './depl
 // Constants for Account Abstraction
 export const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
-  137: '0x9406Cc6185a346906296840746125a0E44976454',
+  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Updated Polygon factory address
   42161: '0x9406Cc6185a346906296840746125a0E44976454',
   10: '0x9406Cc6185a346906296840746125a0E44976454',
   8453: '0x9406Cc6185a346906296840746125a0E44976454',
@@ -14,7 +14,7 @@ export const SIMPLE_ACCOUNT_FACTORY = {
   56: '0x9406Cc6185a346906296840746125a0E44976454'
 } as const;
 
-// Simple Account Factory ABI
+// Factory ABI for computing counterfactual address
 export const FACTORY_ABI = [
   {
     inputs: [
@@ -77,37 +77,33 @@ export async function generateInitCode(ownerAddress: string, chainId: number): P
     throw new Error(`No factory address for chain ID ${chainId}`);
   }
 
-  // Ensure the factory address is properly formatted
-  const formattedFactoryAddress = factoryAddress.toLowerCase().startsWith('0x')
-    ? factoryAddress.toLowerCase()
-    : `0x${factoryAddress}`;
+  // Ensure proper formatting of addresses
+  const formattedFactoryAddress = factoryAddress.toLowerCase();
+  const formattedOwnerAddress = ownerAddress.toLowerCase();
 
   // Encode the createAccount function call
   const createAccountData = encodeFunctionData({
     abi: FACTORY_ABI,
     functionName: 'createAccount',
-    args: [ownerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
+    args: [formattedOwnerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
   });
 
-  // Concatenate factory address with encoded function data
+  // Generate initCode by concatenating factory address with the encoded function data
   const initCode = formattedFactoryAddress + createAccountData.slice(2);
 
   console.log('Generated initCode:', {
     factoryAddress: formattedFactoryAddress,
-    ownerAddress,
+    ownerAddress: formattedOwnerAddress,
     chainId,
+    createAccountData,
     initCode
   });
 
   return initCode;
 }
 
-// Function to deploy the smart wallet with proper gas estimation and verification
-export async function deploySmartWallet(
-  ownerAddress: string,
-  chainId: number,
-  privateKey: string
-): Promise<string> {
+// Function to deploy the smart wallet
+export async function deploySmartWallet(ownerAddress: string, chainId: number): Promise<string> {
   const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
   if (!factoryAddress) {
     throw new Error(`No factory address for chain ID ${chainId}`);
@@ -131,20 +127,21 @@ export async function deploySmartWallet(
   const gasEstimate = await estimateDeploymentGas(factoryAddress, ownerAddress, chainId);
 
   // Create deployment UserOperation
-  const deploymentTx = {
+  const deploymentOp = {
     sender: expectedAddress,
-    nonce: BigInt(0),
+    nonce: '0x0',
     initCode,
-    callData: '0x', // Empty callData for deployment
-    callGasLimit: gasEstimate,
-    verificationGasLimit: BigInt(400000), // Conservative estimate for deployment
-    preVerificationGas: BigInt(50000), // Standard pre-verification gas
-    maxFeePerGas: BigInt(5000000000), // 5 gwei
-    maxPriorityFeePerGas: BigInt(5000000000), // 5 gwei
-    paymasterAndData: '0x' // No paymaster for now
+    callData: '0x',
+    callGasLimit: gasEstimate.toString(16),
+    verificationGasLimit: '0x100000',
+    preVerificationGas: '0xc350',
+    maxFeePerGas: '0x12a05f200',
+    maxPriorityFeePerGas: '0x12a05f200',
+    paymasterAndData: '0x',
+    signature: '0x'
   };
 
-  console.log('Sending deployment UserOperation:', JSON.stringify(deploymentTx, null, 2));
+  console.log('Sending deployment UserOperation:', JSON.stringify(deploymentOp, null, 2));
 
   // Track deployment with retries
   try {
@@ -153,8 +150,8 @@ export async function deploySmartWallet(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userOp: deploymentTx,
-          chainId: chainId
+          userOp: deploymentOp,
+          chainId
         })
       })
     );
@@ -168,7 +165,7 @@ export async function deploySmartWallet(
         console.log('Wallet deployment confirmed at:', expectedAddress);
         return expectedAddress;
       }
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between checks
+      await new Promise(resolve => setTimeout(resolve, 2000));
       attempts++;
     }
 

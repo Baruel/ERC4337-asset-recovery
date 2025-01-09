@@ -1,19 +1,14 @@
-export interface UserOperation {
-  sender: string;
-  nonce: string; // Changed from bigint to string for proper serialization
-  initCode: string;
-  callData: string;
-  callGasLimit: string; // Changed from bigint to string
-  verificationGasLimit: string; // Changed from bigint to string
-  preVerificationGas: string; // Changed from bigint to string
-  maxFeePerGas: string; // Changed from bigint to string
-  maxPriorityFeePerGas: string; // Changed from bigint to string
-  paymasterAndData: string;
-  signature: string;
-}
+import { UserOperation as InterfaceUserOperation } from './interfaces';
+
+export type UserOperation = InterfaceUserOperation;
 
 export interface BundlerProvider {
   sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any>;
+}
+
+export interface BundlerProviderConfig {
+  apiKey: string;
+  baseUrl?: string;
 }
 
 export interface BundlerConfig {

@@ -1,8 +1,17 @@
-import { UserOperation } from './types';
+import { BundlerProvider, UserOperation } from './types';
 import { AlchemyBundlerProvider } from './providers/alchemy';
+import { createBundlerProvider as createProvider } from './factory';
 
-export interface BundlerProvider {
-  sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any>;
+// Factory to create bundler provider instances
+export function createBundlerProvider(): BundlerProvider {
+  if (!process.env.ALCHEMY_API_KEY) {
+    throw new Error('ALCHEMY_API_KEY environment variable is not set');
+  }
+
+  // Initialize Alchemy provider with API key from environment
+  return createProvider('alchemy', {
+    apiKey: process.env.ALCHEMY_API_KEY
+  });
 }
 
 export class StackupBundlerProvider implements BundlerProvider {
@@ -36,12 +45,4 @@ export class StackupBundlerProvider implements BundlerProvider {
     console.log(`[Stackup] UserOperation sent successfully`, result);
     return result;
   }
-}
-
-// Factory to create bundler provider instances
-export function createBundlerProvider(): BundlerProvider {
-  // Initialize Alchemy provider with API key
-  return new AlchemyBundlerProvider({
-    apiKey: 'CF0MniJ9y43iEJwhONRcD4lapMIXQFoe'
-  });
 }

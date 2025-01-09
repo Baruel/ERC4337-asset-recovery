@@ -240,14 +240,24 @@ export function useSendTransaction() {
           throw new Error('Network not supported');
         }
 
+        const sender = smartWalletAddress || address;
+
+        // Check if the wallet is deployed
+        const isDeployed = await verifyDeployment(sender, network.id);
+        console.log('Wallet deployment status:', { isDeployed, sender, chainId: network.id });
+
+        // Generate initCode if wallet is not deployed
+        const initCode = !isDeployed ? await generateInitCode(address, network.id) : '0x';
+        console.log('InitCode:', initCode);
+
         // Get the current nonce
-        const nonce = await fetchNonce(smartWalletAddress || address, network.id);
+        const nonce = await fetchNonce(sender, network.id);
 
         // Create the user operation
         const userOp = {
-          sender: smartWalletAddress || address,
+          sender,
           nonce: nonce.toString(),
-          initCode: '0x',
+          initCode,
           callData: encodeFunctionData({
             abi: [{
               name: 'transfer',
@@ -267,7 +277,8 @@ export function useSendTransaction() {
           preVerificationGas: '50000',
           maxFeePerGas: '5000000000',
           maxPriorityFeePerGas: '5000000000',
-          paymasterAndData: '0x'
+          paymasterAndData: '0x',
+          signature: '0x' // Will be filled after signing
         };
 
         // Get entry point and sign the operation
@@ -287,7 +298,7 @@ export function useSendTransaction() {
           },
           body: JSON.stringify({
             userOp: serializedUserOp,
-            network: network.id
+            chainId: network.id
           })
         });
 
@@ -298,12 +309,17 @@ export function useSendTransaction() {
           throw error;
         }
 
-        return await response.json();
+        const result = await response.json();
+        console.log('Transaction result:', result);
+
+        return result;
       } catch (error) {
         console.error('Transaction error:', error);
-        throw formatTransactionError(error, userOp, {
-          name: network?.name,
-          chainId: network?.id
+        throw formatTransactionError(error, {
+          network: {
+            name: network?.name,
+            chainId: network?.id
+          }
         });
       }
     }

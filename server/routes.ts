@@ -36,16 +36,16 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
-// Simple Account Factory addresses
-const FACTORY_ADDRESSES = {
+// Constants for Account Abstraction
+const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
-  137: '0x9406Cc6185a346906296840746125a0E44976454',
+  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Updated Polygon factory address
   42161: '0x9406Cc6185a346906296840746125a0E44976454',
   10: '0x9406Cc6185a346906296840746125a0E44976454',
   8453: '0x9406Cc6185a346906296840746125a0E44976454',
-  43114: '0x9406Cc6185a346906296840746125a0E44976454',
-  56: '0x9406Cc6185a346906296840746125a0E44976454'
-};
+  56: '0x9406Cc6185a346906296840746125a0E44976454',
+  43114: '0x9406Cc6185a346906296840746125a0E44976454'
+} as const;
 
 // Initialize the bundler provider
 const bundlerProvider = createBundlerProvider();
@@ -141,7 +141,7 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({ error: 'Unsupported chain ID' });
       }
 
-      const factoryAddress = FACTORY_ADDRESSES[chainId as keyof typeof FACTORY_ADDRESSES];
+      const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
       if (!factoryAddress) {
         return res.status(400).json({ error: 'No factory address for this chain' });
       }
@@ -274,36 +274,40 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Missing chainId parameter');
       }
 
+      const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
+      if (!factoryAddress) {
+        throw new Error(`Unsupported chain ID: ${chainId}`);
+      }
+
       const entryPoint = ENTRY_POINT_ADDRESSES[chainId as keyof typeof ENTRY_POINT_ADDRESSES];
       if (!entryPoint) {
-        throw new Error(`Unsupported chain ID: ${chainId}`);
+        throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
       console.log(`Sending UserOperation to network ${chainId} via Alchemy bundler`);
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
+      console.log('Factory Address:', factoryAddress);
+      console.log('EntryPoint:', entryPoint);
 
-      // Ensure userOp is properly serialized before logging and sending
-      const serializedUserOp = serializeBigIntValues(userOp);
+      // Send the operation using the bundler
+      const result = await bundlerProvider.sendUserOperation(
+        userOp,
+        entryPoint,
+        chainId
+      );
 
-      const result = await bundlerProvider.sendUserOperation(serializedUserOp, entryPoint, chainId);
-
-      // Serialize any BigInt values in the response
-      const serializedResult = serializeBigIntValues(result);
-      res.json(serializedResult);
-    } catch (error) {
-      console.error('Error sending UserOperation:', error);
-
-      // Get the error context
-      const context = {
-        chainId: req.body.chainId,
-        entryPoint: req.body.chainId ? ENTRY_POINT_ADDRESSES[req.body.chainId as keyof typeof ENTRY_POINT_ADDRESSES] : undefined,
-        userOp: serializeBigIntValues(req.body.userOp),
-        path: '/api/send-user-operation',
-        timestamp: new Date().toISOString()
-      };
-
-      // Format and send detailed error response
-      res.status(500).json(formatServerError(error, context));
+      res.json(result);
+    } catch (error: any) {
+      console.error('Error in send-user-operation:', error);
+      res.status(500).json({
+        error: error.message,
+        context: {
+          chainId: req.body.chainId,
+          factoryAddress: SIMPLE_ACCOUNT_FACTORY[req.body.chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY],
+          entryPoint: ENTRY_POINT_ADDRESSES[req.body.chainId as keyof typeof ENTRY_POINT_ADDRESSES],
+          timestamp: new Date().toISOString()
+        }
+      });
     }
   });
 
