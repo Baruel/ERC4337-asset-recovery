@@ -4,6 +4,17 @@ import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes } from 'viem';
 
+// Constants for Account Abstraction
+const SIMPLE_ACCOUNT_FACTORY = {
+  1: '0x9406Cc6185a346906296840746125a0E44976454',
+  137: '0x9406Cc6185a346906296840746125a0E44976454',
+  42161: '0x9406Cc6185a346906296840746125a0E44976454',
+  10: '0x9406Cc6185a346906296840746125a0E44976454',
+  8453: '0x9406Cc6185a346906296840746125a0E44976454',
+  43114: '0x9406Cc6185a346906296840746125a0E44976454',
+  56: '0x9406Cc6185a346906296840746125a0E44976454'
+};
+
 interface WalletState {
   address: string | null;
   smartWalletAddress: string | null;
@@ -21,7 +32,7 @@ export const SUPPORTED_NETWORKS = [
   base,
   avalanche,
   bsc
-];
+] as const;
 
 // Create wallet store
 const useWalletStore = create<WalletState>((set) => ({
@@ -80,10 +91,17 @@ export function useDisconnect() {
 
 // Hook for transaction history
 export function useTransactionHistory(address: string) {
-  return {
-    data: [],
-    isLoading: false
-  };
+  return useQuery({
+    queryKey: ['transactions', address],
+    queryFn: async () => {
+      const response = await fetch(`/api/transactions/${address}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch transaction history');
+      }
+      return response.json();
+    },
+    enabled: !!address
+  });
 }
 
 // Convert BigInt values to hex strings for serialization
@@ -167,33 +185,35 @@ async function signUserOp(userOp: any, chainId: number, entryPoint: string, priv
   return signature;
 }
 
-// Helper to parse bundler error messages
-function parseBundlerError(errorText: string): string {
-  try {
-    const parsed = JSON.parse(errorText);
-    if (parsed.error?.details) {
-      try {
-        const nestedError = JSON.parse(parsed.error.details);
-        if (nestedError.error?.message) {
-          return nestedError.error.message;
-        }
-      } catch (e) {
-        // If nested parsing fails, use the outer error
-        return parsed.error.details;
-      }
-    }
-    if (parsed.error?.message) {
-      return parsed.error.message;
-    }
-    return errorText;
-  } catch (e) {
-    return errorText;
+// Function to generate initCode for new smart wallet deployment
+async function generateInitCode(ownerAddress: string, chainId: number): Promise<string> {
+  const factoryAddress = SIMPLE_ACCOUNT_FACTORY[chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY];
+  if (!factoryAddress) {
+    throw new Error(`No factory address for chain ID ${chainId}`);
   }
+
+  // Encode the creation code for the smart wallet
+  const initCode = encodeFunctionData({
+    abi: [{
+      name: 'createAccount',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'owner', type: 'address' },
+        { name: 'salt', type: 'uint256' }
+      ],
+      outputs: [{ type: 'address' }]
+    }],
+    functionName: 'createAccount',
+    args: [ownerAddress as `0x${string}`, BigInt(0)] // Using salt 0 for simplicity
+  });
+
+  return factoryAddress + initCode.slice(2); // Concatenate factory address with encoded function data
 }
 
 // Hook for sending transactions
 export function useSendTransaction() {
-  const { privateKey, smartWalletAddress } = useWalletStore();
+  const { privateKey, address, smartWalletAddress } = useWalletStore();
 
   return {
     mutateAsync: async (values: {
@@ -203,7 +223,7 @@ export function useSendTransaction() {
       token: string;
     }) => {
       try {
-        if (!privateKey || !smartWalletAddress) {
+        if (!privateKey || !address) {
           throw new Error('Wallet not connected');
         }
 
@@ -229,33 +249,29 @@ export function useSendTransaction() {
           args: [values.recipient as `0x${string}`, BigInt(values.amount)]
         });
 
+        // Generate initCode if this is a new smart wallet
+        const initCode = !smartWalletAddress ? await generateInitCode(address, network.id) : '0x';
+
         // Fetch the current nonce from the smart wallet contract
-        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress}&chainId=${network.id}`);
+        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress || address}&chainId=${network.id}`);
         if (!nonceResponse.ok) {
-          const errorData = await nonceResponse.json();
-          throw new Error(`Failed to fetch nonce: ${errorData.error}`);
+          throw new Error('Failed to fetch nonce');
         }
 
-        const nonceData = await nonceResponse.text();
-        if (!nonceData) {
-          throw new Error('Empty nonce received from server');
-        }
-
-        console.log('Raw nonce response:', nonceData);
-        const nonce = BigInt(nonceData.trim().replace(/['"]/g, '')); // Remove any quotes
-        console.log('Parsed nonce:', nonce.toString());
+        const nonce = BigInt((await nonceResponse.text()).trim());
+        console.log('Using nonce:', nonce.toString());
 
         // Create UserOperation with increased gas values
         const userOp = {
-          sender: smartWalletAddress,
+          sender: smartWalletAddress || address,
           nonce,
-          initCode: '0x',
+          initCode,
           callData,
-          callGasLimit: BigInt(500000), // Increased from 100,000
-          verificationGasLimit: BigInt(500000), // Increased from 100,000
-          preVerificationGas: BigInt(50000), // Increased from 21,000
-          maxFeePerGas: BigInt(5000000000), // 5 GWEI
-          maxPriorityFeePerGas: BigInt(5000000000), // 5 GWEI
+          callGasLimit: BigInt(500000),
+          verificationGasLimit: BigInt(500000),
+          preVerificationGas: BigInt(50000),
+          maxFeePerGas: BigInt(5000000000),
+          maxPriorityFeePerGas: BigInt(5000000000),
           paymasterAndData: '0x'
         };
 
@@ -321,4 +337,28 @@ export function useSendTransaction() {
     },
     isLoading: false
   };
+}
+
+// Helper to parse bundler error messages
+function parseBundlerError(errorText: string): string {
+  try {
+    const parsed = JSON.parse(errorText);
+    if (parsed.error?.details) {
+      try {
+        const nestedError = JSON.parse(parsed.error.details);
+        if (nestedError.error?.message) {
+          return nestedError.error.message;
+        }
+      } catch (e) {
+        // If nested parsing fails, use the outer error
+        return parsed.error.details;
+      }
+    }
+    if (parsed.error?.message) {
+      return parsed.error.message;
+    }
+    return errorText;
+  } catch (e) {
+    return errorText;
+  }
 }
