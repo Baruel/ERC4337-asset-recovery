@@ -44,6 +44,7 @@ interface TransactionError {
   };
   endpoint?: string;
   message: string;
+  rawError?: string;
 }
 
 export default function SendAssets({ address }: SendAssetsProps) {
@@ -92,7 +93,8 @@ export default function SendAssets({ address }: SendAssetsProps) {
           name: network.name,
           chainId: network.id
         } : undefined,
-        endpoint: '/api/send-user-operation'
+        endpoint: '/api/send-user-operation',
+        rawError: error.rawError
       };
 
       // If the error contains user operation details, add them

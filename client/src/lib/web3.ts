@@ -108,6 +108,30 @@ function serializeUserOp(userOp: any) {
   };
 }
 
+// Helper to parse bundler error messages
+function parseBundlerError(errorText: string): string {
+  try {
+    const parsed = JSON.parse(errorText);
+    if (parsed.error?.details) {
+      try {
+        const nestedError = JSON.parse(parsed.error.details);
+        if (nestedError.error?.message) {
+          return nestedError.error.message;
+        }
+      } catch (e) {
+        // If nested parsing fails, use the outer error
+        return parsed.error.details;
+      }
+    }
+    if (parsed.error?.message) {
+      return parsed.error.message;
+    }
+    return errorText;
+  } catch (e) {
+    return errorText;
+  }
+}
+
 // Hook for sending transactions
 export function useSendTransaction() {
   const { privateKey, smartWalletAddress } = useWalletStore();
@@ -226,16 +250,11 @@ export function useSendTransaction() {
         if (!response.ok) {
           const errorText = await response.text();
           console.error('Raw bundler response:', errorText);
-          let errorDetails;
-          try {
-            errorDetails = JSON.parse(errorText).error?.message || errorText;
-          } catch (e) {
-            errorDetails = errorText;
-          }
+          const errorMessage = parseBundlerError(errorText);
 
-          const error = new Error(errorDetails);
-          // Attach the user operation and network details to the error
+          const error = new Error(errorMessage);
           (error as any).userOperation = serializedUserOp;
+          (error as any).rawError = errorText;
           throw error;
         }
 
