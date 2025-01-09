@@ -3,7 +3,6 @@ import { createServer, type Server } from "http";
 import { createPublicClient, http } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'viem/chains';
 import { createBundlerProvider } from './bundler/providers';
-import type { BundlerConfig } from './bundler/types';
 
 // Network configurations
 const NETWORKS = {
@@ -27,20 +26,8 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
-// Create bundler provider based on environment configuration
-const bundlerConfig: BundlerConfig = {
-  type: process.env.BUNDLER_PROVIDER || 'stackup',
-  apiKey: process.env.STACKUP_API_KEY || process.env.BUNDLER_API_KEY,
-  baseUrl: process.env.BUNDLER_URL
-};
-
-let bundlerProvider: ReturnType<typeof createBundlerProvider>;
-try {
-  bundlerProvider = createBundlerProvider(bundlerConfig.type, bundlerConfig);
-} catch (error) {
-  console.error('Failed to initialize bundler provider:', error);
-  // Continue without bundler provider - will fail at runtime if transactions are attempted
-}
+// Initialize the bundler provider
+const bundlerProvider = createBundlerProvider();
 
 const ERC20_ABI = [{
   name: 'balanceOf',
@@ -71,7 +58,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Token balance endpoint supporting multiple chains
+  // Token balance endpoint
   app.post('/api/tokens/balance', async (req, res) => {
     try {
       const { tokenAddress, userAddress, chainId } = req.body;
@@ -111,10 +98,6 @@ export function registerRoutes(app: Express): Server {
   // Updated UserOperation submission endpoint
   app.post('/api/send-user-operation', async (req, res) => {
     try {
-      if (!bundlerProvider) {
-        throw new Error('Bundler provider not configured');
-      }
-
       const { userOp, network } = req.body;
       const entryPoint = ENTRY_POINT_ADDRESSES[network as keyof typeof ENTRY_POINT_ADDRESSES];
 
@@ -122,11 +105,15 @@ export function registerRoutes(app: Express): Server {
         throw new Error(`Unsupported network: ${network}`);
       }
 
+      console.log(`Sending UserOperation to network ${network} via Alchemy bundler`);
       const result = await bundlerProvider.sendUserOperation(userOp, entryPoint, network);
       res.json(result);
     } catch (error) {
       console.error('Error sending UserOperation:', error);
-      res.status(500).json({ error: 'Failed to send UserOperation' });
+      res.status(500).json({ 
+        error: 'Failed to send UserOperation',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

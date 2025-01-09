@@ -12,13 +12,11 @@ export interface UserOperation {
   signature: string;
 }
 
-export interface BundlerProvider {
-  sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any>;
+export interface BundlerProviderConfig {
+  apiKey: string;
+  baseUrl?: string;
 }
 
-export interface BundlerConfig {
-  type: string;
-  apiKey?: string;
-  baseUrl?: string;
-  // Add other provider-specific configuration options as needed
+export interface BundlerProvider {
+  sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any>;
 }

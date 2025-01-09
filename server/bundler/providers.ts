@@ -37,27 +37,13 @@ export class StackupBundlerProvider implements BundlerProvider {
   }
 }
 
-// Example of another bundler provider implementation
-export class AlchemyBundlerProvider implements BundlerProvider {
-  constructor(private apiKey: string, private baseUrl?: string) {}
-
-  async sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any> {
-    console.log(`[Alchemy] Would send UserOperation to chain ${chainId}`);
-    // Implement Alchemy-specific bundler interaction
-    throw new Error('Alchemy bundler implementation pending');
-  }
-}
+import { BundlerProvider } from './types';
+import { AlchemyBundlerProvider } from './providers/alchemy';
 
 // Factory to create bundler provider instances
-export function createBundlerProvider(type: string, config: any): BundlerProvider {
-  console.log(`Creating bundler provider of type: ${type}`);
-
-  switch (type.toLowerCase()) {
-    case 'stackup':
-      return new StackupBundlerProvider(config.apiKey, config.baseUrl);
-    case 'alchemy':
-      return new AlchemyBundlerProvider(config.apiKey, config.baseUrl);
-    default:
-      throw new Error(`Unsupported bundler provider: ${type}`);
-  }
+export function createBundlerProvider(): BundlerProvider {
+  // Using Alchemy provider with the provided API key
+  return new AlchemyBundlerProvider({
+    apiKey: 'CF0MniJ9y43iEJwhONRcD4lapMIXQFoe'
+  });
 }
