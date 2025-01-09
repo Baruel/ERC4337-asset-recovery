@@ -36,7 +36,7 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
-// Constants for Account Abstraction with updated Polygon factory
+// Constants for Account Abstraction with updated Polygon factory and paymaster
 const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
   137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Polygon-specific factory
@@ -46,6 +46,14 @@ const SIMPLE_ACCOUNT_FACTORY = {
   56: '0x9406Cc6185a346906296840746125a0E44976454',
   43114: '0x9406Cc6185a346906296840746125a0E44976454'
 } as const;
+
+// Polygon-specific paymaster configuration
+const PAYMASTER_CONFIG = {
+  137: {
+    address: '0x000000000025EB742125C7E8A61c2519ae89A699', // Stackup Paymaster on Polygon
+    data: '0x' // Empty data for basic sponsorship
+  }
+};
 
 // Initialize the bundler provider
 const bundlerProvider = createBundlerProvider();
@@ -274,7 +282,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Updated send-user-operation endpoint with enhanced error handling
+  // Updated send-user-operation endpoint with paymaster integration
   app.post('/api/send-user-operation', async (req, res) => {
     try {
       const { userOp, chainId } = req.body;
@@ -293,6 +301,12 @@ export function registerRoutes(app: Express): Server {
         throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
+      // Add paymaster data for Polygon network
+      if (chainId === 137 && !userOp.paymasterAndData.length > 2) {
+        const paymaster = PAYMASTER_CONFIG[137];
+        userOp.paymasterAndData = paymaster.address + paymaster.data.slice(2);
+      }
+
       // Enhanced logging for debugging
       console.log(`Sending UserOperation to network ${chainId} via Alchemy bundler`);
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
@@ -309,6 +323,8 @@ export function registerRoutes(app: Express): Server {
       res.json(result);
     } catch (error: any) {
       console.error('Error in send-user-operation:', error);
+
+      // Enhanced error response with context
       res.status(500).json({
         error: error.message,
         context: {

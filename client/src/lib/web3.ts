@@ -289,7 +289,7 @@ export function useSendTransaction() {
           preVerificationGas: '50000',
           maxFeePerGas: '5000000000',
           maxPriorityFeePerGas: '5000000000',
-          paymasterAndData: '0x',
+          paymasterAndData: '0x', // Will be filled by the server for Polygon network
           signature: '0x' // Will be filled after signing
         };
 
