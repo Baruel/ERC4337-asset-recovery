@@ -231,10 +231,19 @@ export function useSendTransaction() {
 
         // Fetch the current nonce from the smart wallet contract
         const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress}&chainId=${network.id}`);
-        const nonceData = await nonceResponse.text();
-        const nonce = BigInt(nonceData.trim());
+        if (!nonceResponse.ok) {
+          const errorData = await nonceResponse.json();
+          throw new Error(`Failed to fetch nonce: ${errorData.error}`);
+        }
 
-        console.log('Fetched nonce:', nonce.toString());
+        const nonceData = await nonceResponse.text();
+        if (!nonceData) {
+          throw new Error('Empty nonce received from server');
+        }
+
+        console.log('Raw nonce response:', nonceData);
+        const nonce = BigInt(nonceData.trim());
+        console.log('Parsed nonce:', nonce.toString());
 
         // Create UserOperation with increased gas values
         const userOp = {
