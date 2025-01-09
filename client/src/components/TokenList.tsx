@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -10,14 +10,31 @@ import {
 import { useTokenBalances } from "@/lib/tokens";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import CustomTokenForm from "./CustomTokenForm";
 
 interface TokenListProps {
   address: string;
 }
 
+interface CustomToken {
+  address: string;
+  symbol: string;
+  network: string;
+}
+
 export default function TokenList({ address }: TokenListProps) {
   const { data: tokens, isLoading, refetch } = useTokenBalances(address);
+  const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
 
+  // Load custom tokens from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("customTokens");
+    if (stored) {
+      setCustomTokens(JSON.parse(stored));
+    }
+  }, []);
+
+  // Setup periodic refresh
   useEffect(() => {
     const interval = setInterval(() => {
       refetch();
@@ -45,17 +62,30 @@ export default function TokenList({ address }: TokenListProps) {
     );
   }
 
+  // Combine default and custom tokens
+  const allTokens = [
+    ...(tokens || []),
+    ...customTokens.map(token => ({
+      ...token,
+      balance: '0',
+      value: 0
+    }))
+  ];
+
   // Group tokens by network
-  const tokensByNetwork = tokens?.reduce((acc, token) => {
+  const tokensByNetwork = allTokens.reduce((acc, token) => {
     if (!acc[token.network]) {
       acc[token.network] = [];
     }
     acc[token.network].push(token);
     return acc;
-  }, {} as Record<string, typeof tokens>);
+  }, {} as Record<string, typeof allTokens>);
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <CustomTokenForm />
+      </div>
       {Object.entries(tokensByNetwork || {}).map(([network, networkTokens]) => (
         <Card key={network}>
           <CardHeader>
