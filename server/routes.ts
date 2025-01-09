@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createPublicClient, http } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'viem/chains';
-import { createBundlerProvider } from './bundler/providers';
+import { createBundlerProvider, type BundlerProvider } from './bundler/providers';
 
 // Network configurations with RPC URLs
 const NETWORKS = {
@@ -55,8 +55,21 @@ const PAYMASTER_CONFIG = {
   }
 };
 
-// Initialize the bundler provider
-const bundlerProvider = createBundlerProvider();
+// Updated bundler provider initialization with configuration
+let bundlerProvider: BundlerProvider | null = null;
+
+function initializeBundlerProvider(config?: { type?: string; apiKey?: string }) {
+  bundlerProvider = createBundlerProvider(config);
+  console.log('Bundler provider initialized with configuration');
+}
+
+// Initialize with environment variables by default
+try {
+  initializeBundlerProvider();
+} catch (error) {
+  console.warn('Failed to initialize bundler provider with environment variables:', error);
+  console.log('Waiting for user-provided configuration...');
+}
 
 // Factory ABI for computing counterfactual address
 const FACTORY_ABI = [{
@@ -282,10 +295,31 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Updated send-user-operation endpoint with paymaster integration
+  // Add configuration endpoint for bundler settings
+  app.post('/api/config/bundler', (req, res) => {
+    try {
+      const { type, apiKey } = req.body;
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'API key is required' });
+      }
+
+      initializeBundlerProvider({ type, apiKey });
+      res.json({ success: true, message: 'Bundler configuration updated successfully' });
+    } catch (error) {
+      console.error('Error updating bundler configuration:', error);
+      res.status(500).json({ error: 'Failed to update bundler configuration' });
+    }
+  });
+
+  // Updated send-user-operation endpoint with optional paymaster
   app.post('/api/send-user-operation', async (req, res) => {
     try {
-      const { userOp, chainId } = req.body;
+      const { userOp, chainId, usePaymaster = true } = req.body;
+
+      if (!bundlerProvider) {
+        throw new Error('Bundler provider not configured. Please configure bundler settings first.');
+      }
 
       if (!chainId) {
         throw new Error('Missing chainId parameter');
@@ -301,17 +335,22 @@ export function registerRoutes(app: Express): Server {
         throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
-      // Add paymaster data for Polygon network
-      if (chainId === 137 && !userOp.paymasterAndData.length > 2) {
+      // Only add paymaster data if explicitly requested and on Polygon network
+      if (usePaymaster && chainId === 137 && userOp.paymasterAndData.length <= 2) {
         const paymaster = PAYMASTER_CONFIG[137];
         userOp.paymasterAndData = paymaster.address + paymaster.data.slice(2);
+        console.log('Added paymaster data to UserOperation');
+      } else if (!usePaymaster) {
+        userOp.paymasterAndData = '0x';
+        console.log('Paymaster disabled for this transaction');
       }
 
       // Enhanced logging for debugging
-      console.log(`Sending UserOperation to network ${chainId} via Alchemy bundler`);
+      console.log(`Sending UserOperation to network ${chainId}`);
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
       console.log('Factory Address:', factoryAddress);
       console.log('EntryPoint:', entryPoint);
+      console.log('Paymaster Enabled:', usePaymaster);
 
       // Send the operation using the bundler
       const result = await bundlerProvider.sendUserOperation(
@@ -331,6 +370,7 @@ export function registerRoutes(app: Express): Server {
           chainId: req.body.chainId,
           factoryAddress: SIMPLE_ACCOUNT_FACTORY[req.body.chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY],
           entryPoint: ENTRY_POINT_ADDRESSES[req.body.chainId as keyof typeof ENTRY_POINT_ADDRESSES],
+          usePaymaster: req.body.usePaymaster,
           timestamp: new Date().toISOString()
         }
       });

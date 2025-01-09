@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, encodeFunctionData, keccak256, concat, toBytes, createPublicClient } from 'viem';
 import { computeSmartWalletAddress, generateInitCode, signMessage } from './smartWallet';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { verifyDeployment } from './deployment';
 import { deploySmartWallet } from './smartWallet';
 
@@ -229,7 +229,29 @@ function formatTransactionError(error: any, context: Record<string, any> = {}) {
   return errorResponse;
 }
 
-// Hook for sending transactions
+// Add new hooks for managing bundler configuration and paymaster settings
+export function useBundlerConfig() {
+  return useMutation({
+    mutationFn: async (config: { type?: string; apiKey: string }) => {
+      const response = await fetch('/api/config/bundler', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update bundler configuration');
+      }
+
+      return response.json();
+    },
+  });
+}
+
+
+// Updated sendTransaction hook with paymaster toggle
 export function useSendTransaction() {
   const { privateKey, address, smartWalletAddress } = useWalletStore();
 
@@ -239,6 +261,7 @@ export function useSendTransaction() {
       amount: string;
       network: string;
       token: string;
+      usePaymaster?: boolean; // New optional parameter
     }) => {
       let selectedNetwork;
       try {
@@ -310,7 +333,8 @@ export function useSendTransaction() {
           },
           body: JSON.stringify({
             userOp: serializedUserOp,
-            chainId: selectedNetwork.id
+            chainId: selectedNetwork.id,
+            usePaymaster: values.usePaymaster ?? true // Default to true if not specified
           })
         });
 

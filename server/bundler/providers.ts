@@ -3,14 +3,17 @@ import { AlchemyBundlerProvider } from './providers/alchemy';
 import { createBundlerProvider as createProvider } from './factory';
 
 // Factory to create bundler provider instances
-export function createBundlerProvider(): BundlerProvider {
-  if (!process.env.ALCHEMY_API_KEY) {
-    throw new Error('ALCHEMY_API_KEY environment variable is not set');
+export function createBundlerProvider(config?: { type?: string; apiKey?: string }): BundlerProvider {
+  // Get API key from config or environment variable
+  const apiKey = config?.apiKey || process.env.ALCHEMY_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('API key is required. Please provide an Alchemy API key either through configuration or ALCHEMY_API_KEY environment variable');
   }
 
-  // Initialize Alchemy provider with API key from environment
-  return createProvider('alchemy', {
-    apiKey: process.env.ALCHEMY_API_KEY
+  // Initialize Alchemy provider with API key
+  return createProvider(config?.type || 'alchemy', {
+    apiKey
   });
 }
 
