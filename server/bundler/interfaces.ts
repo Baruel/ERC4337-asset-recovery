@@ -1,13 +1,13 @@
 export interface UserOperation {
   sender: string;
-  nonce: bigint;
+  nonce: string;
   initCode: string;
   callData: string;
-  callGasLimit: bigint;
-  verificationGasLimit: bigint;
-  preVerificationGas: bigint;
-  maxFeePerGas: bigint;
-  maxPriorityFeePerGas: bigint;
+  callGasLimit: string;
+  verificationGasLimit: string;
+  preVerificationGas: string;
+  maxFeePerGas: string;
+  maxPriorityFeePerGas: string;
   paymasterAndData: string;
   signature: string;
 }
@@ -15,6 +15,7 @@ export interface UserOperation {
 export interface BundlerProviderConfig {
   apiKey: string;
   baseUrl?: string;
+  paymasterUrl?: string;
 }
 
 export interface BundlerProvider {

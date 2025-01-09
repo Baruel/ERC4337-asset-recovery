@@ -13,7 +13,14 @@ export interface BundlerProviderConfig {
 }
 
 export interface BundlerConfig {
-  type: string;
-  apiKey?: string;
-  baseUrl?: string;
+  type: 'alchemy';
+  apiKey: string;
+  paymasterUrl?: string;
+}
+
+export interface BundlerState {
+  isConfigured: boolean;
+  type?: string;
+  hasPaymaster?: boolean;
+  error?: string;
 }

@@ -2,23 +2,13 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createPublicClient, http } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base, avalanche, bsc } from 'viem/chains';
-import { createBundlerProvider } from './bundler/factory';
+import { createBundlerProvider, getBundlerState } from './bundler/factory';
 import type { BundlerProvider, BundlerProviderConfig } from './bundler/types';
 
 // Network configurations with RPC URLs
 const NETWORKS = {
   1: mainnet,
-  137: {
-    ...polygon,
-    rpcUrls: {
-      default: {
-        http: ['https://polygon.llamarpc.com']
-      },
-      public: {
-        http: ['https://polygon.llamarpc.com']
-      }
-    }
-  },
+  137: polygon,
   42161: arbitrum,
   10: optimism,
   8453: base,
@@ -53,21 +43,34 @@ let bundlerProvider: BundlerProvider | null = null;
 let bundlerConfig: BundlerProviderConfig | null = null;
 
 function initializeBundlerProvider(config: BundlerProviderConfig) {
-  bundlerConfig = config;
-  bundlerProvider = createBundlerProvider('alchemy', config);
-  console.log('Bundler provider initialized with configuration');
+  try {
+    console.log('Initializing bundler provider with config:', {
+      ...config,
+      apiKey: '[REDACTED]'
+    });
+
+    bundlerConfig = config;
+    bundlerProvider = createBundlerProvider('alchemy', config);
+    console.log('Bundler provider initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize bundler provider:', error);
+    // Don't throw here, let the application continue
+    bundlerProvider = null;
+    bundlerConfig = null;
+  }
 }
 
-// Initialize with environment variables by default
-try {
-  if (process.env.ALCHEMY_API_KEY) {
-    initializeBundlerProvider({ apiKey: process.env.ALCHEMY_API_KEY });
-  } else {
-    console.log('No default configuration found. Waiting for user configuration...');
+// Try to initialize with environment variables, but don't crash if they're missing
+if (process.env.ALCHEMY_API_KEY) {
+  try {
+    initializeBundlerProvider({
+      apiKey: process.env.ALCHEMY_API_KEY,
+      paymasterUrl: process.env.PAYMASTER_URL
+    });
+  } catch (error) {
+    console.warn('Failed to initialize bundler provider with environment variables:', error);
+    console.log('Waiting for user-provided configuration...');
   }
-} catch (error) {
-  console.warn('Failed to initialize bundler provider with environment variables:', error);
-  console.log('Waiting for user-provided configuration...');
 }
 
 // Factory ABI for computing counterfactual address
@@ -160,6 +163,52 @@ function formatServerError(error: any, context: Record<string, any> = {}) {
 }
 
 export function registerRoutes(app: Express): Server {
+  // Add configuration status endpoint
+  app.get('/api/config/bundler/status', (req, res) => {
+    res.json(getBundlerState());
+  });
+
+  // Update configuration endpoint
+  app.post('/api/config/bundler', (req, res) => {
+    try {
+      const { apiKey, paymasterUrl } = req.body;
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'API key is required' });
+      }
+
+      // Initialize bundler with provided configuration
+      initializeBundlerProvider({
+        apiKey,
+        paymasterUrl
+      });
+
+      // Get the current state after initialization
+      const state = getBundlerState();
+
+      if (!state.isConfigured) {
+        return res.status(500).json({
+          error: state.error || 'Failed to configure bundler provider'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Bundler configuration updated successfully',
+        config: {
+          type: state.type,
+          hasPaymaster: state.hasPaymaster
+        }
+      });
+    } catch (error) {
+      console.error('Error updating bundler configuration:', error);
+      res.status(500).json({
+        error: 'Failed to update bundler configuration',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Add endpoint to compute smart wallet address
   app.post('/api/smart-wallet/compute-address', async (req, res) => {
     try {
@@ -294,34 +343,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add configuration endpoint for bundler settings
-  app.post('/api/config/bundler', (req, res) => {
-    try {
-      const { apiKey, paymasterUrl } = req.body;
-
-      if (!apiKey) {
-        return res.status(400).json({ error: 'API key is required' });
-      }
-
-      // Initialize bundler with provided configuration
-      initializeBundlerProvider({ 
-        apiKey,
-        paymasterUrl 
-      });
-
-      res.json({ 
-        success: true, 
-        message: 'Bundler configuration updated successfully',
-        config: {
-          type: 'alchemy',
-          hasPaymaster: !!paymasterUrl
-        }
-      });
-    } catch (error) {
-      console.error('Error updating bundler configuration:', error);
-      res.status(500).json({ error: 'Failed to update bundler configuration' });
-    }
-  });
 
   // Updated send-user-operation endpoint with proper paymaster handling
   app.post('/api/send-user-operation', async (req, res) => {
@@ -343,12 +364,6 @@ export function registerRoutes(app: Express): Server {
         console.log('Paymaster disabled for this transaction');
       }
 
-      // Enhanced logging for debugging
-      console.log(`Sending UserOperation to network ${chainId}`);
-      console.log('UserOperation:', JSON.stringify(userOp, null, 2));
-      console.log('EntryPoint:', entryPoint);
-      console.log('Paymaster Enabled:', usePaymaster);
-
       // Send the operation using the bundler
       const result = await bundlerProvider.sendUserOperation(
         userOp,
@@ -357,12 +372,12 @@ export function registerRoutes(app: Express): Server {
       );
 
       res.json(result);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error in send-user-operation:', error);
 
       // Enhanced error response with context
       res.status(500).json({
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         context: {
           chainId: req.body.chainId,
           factoryAddress: SIMPLE_ACCOUNT_FACTORY[req.body.chainId as keyof typeof SIMPLE_ACCOUNT_FACTORY],

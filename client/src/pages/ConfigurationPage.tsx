@@ -12,7 +12,10 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 const configSchema = z.object({
-  alchemyApiKey: z.string().min(1, "Alchemy API key is required"),
+  alchemyApiKey: z.string()
+    .min(32, "API key appears to be too short")
+    .max(64, "API key appears to be too long")
+    .regex(/^[a-zA-Z0-9_-]+$/, "API key contains invalid characters"),
   usePaymaster: z.boolean().default(false),
 });
 

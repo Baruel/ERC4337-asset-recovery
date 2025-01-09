@@ -1,10 +1,18 @@
-import { BundlerProvider, UserOperation } from '../types';
+import { BundlerProvider, UserOperation, BundlerProviderConfig } from '../types';
 
 export class AlchemyBundlerProvider implements BundlerProvider {
   private readonly apiKey: string;
+  private readonly paymasterUrl?: string;
 
-  constructor(config: { apiKey: string; baseUrl?: string }) {
+  constructor(config: BundlerProviderConfig) {
+    if (!config.apiKey) {
+      throw new Error('Alchemy API key is required');
+    }
     this.apiKey = config.apiKey;
+    this.paymasterUrl = config.paymasterUrl;
+    console.log('[Alchemy] Provider initialized', {
+      hasPaymaster: !!this.paymasterUrl
+    });
   }
 
   private validateUserOperation(userOp: UserOperation): void {
@@ -50,6 +58,41 @@ export class AlchemyBundlerProvider implements BundlerProvider {
 
       // Validate UserOperation format
       this.validateUserOperation(userOp);
+
+      // If paymaster URL is configured, fetch paymaster data
+      if (this.paymasterUrl) {
+        try {
+          console.log('[Alchemy] Fetching paymaster data');
+          const paymasterResponse = await fetch(this.paymasterUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userOp,
+              entryPoint,
+              chainId
+            }),
+          });
+
+          if (!paymasterResponse.ok) {
+            const errorText = await paymasterResponse.text();
+            throw new Error(`Paymaster request failed: ${errorText}`);
+          }
+
+          const paymasterData = await paymasterResponse.json();
+          if (!paymasterData.paymasterAndData) {
+            throw new Error('Invalid paymaster response: missing paymasterAndData');
+          }
+          userOp.paymasterAndData = paymasterData.paymasterAndData;
+          console.log('[Alchemy] Paymaster data applied:', userOp.paymasterAndData);
+        } catch (error) {
+          console.error('[Alchemy] Failed to fetch paymaster data:', error);
+          throw new Error(`Paymaster error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else {
+        console.log('[Alchemy] No paymaster configured, proceeding without paymaster');
+      }
 
       // Log the operation for debugging
       console.log(`[Alchemy] Sending UserOperation:`, JSON.stringify(userOp, null, 2));
