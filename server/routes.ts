@@ -26,18 +26,69 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
+// Smart Wallet ABI for nonce
+const SMART_WALLET_ABI = [{
+  name: 'getNonce',
+  type: 'function',
+  stateMutability: 'view',
+  inputs: [],
+  outputs: [{ type: 'uint256' }]
+}] as const;
+
 // Initialize the bundler provider
 const bundlerProvider = createBundlerProvider();
 
-const ERC20_ABI = [{
-  name: 'balanceOf',
-  type: 'function',
-  stateMutability: 'view',
-  inputs: [{ name: 'account', type: 'address' }],
-  outputs: [{ name: 'balance', type: 'uint256' }]
-}] as const;
-
 export function registerRoutes(app: Express): Server {
+  // Add endpoints for smart wallet nonce and entry point
+  app.get('/api/smart-wallet/nonce', async (req, res) => {
+    try {
+      const { address, chainId } = req.query;
+      if (!address || !chainId) {
+        return res.status(400).json({ error: 'Missing address or chainId' });
+      }
+
+      const chain = NETWORKS[Number(chainId) as keyof typeof NETWORKS];
+      if (!chain) {
+        return res.status(400).json({ error: 'Unsupported chain ID' });
+      }
+
+      const client = createPublicClient({
+        chain,
+        transport: http()
+      });
+
+      const nonce = await client.readContract({
+        address: address as `0x${string}`,
+        abi: SMART_WALLET_ABI,
+        functionName: 'getNonce'
+      });
+
+      res.json(nonce.toString());
+    } catch (error) {
+      console.error('Error fetching nonce:', error);
+      res.status(500).json({ error: 'Failed to fetch nonce' });
+    }
+  });
+
+  app.get('/api/smart-wallet/entry-point', async (req, res) => {
+    try {
+      const { chainId } = req.query;
+      if (!chainId) {
+        return res.status(400).json({ error: 'Missing chainId' });
+      }
+
+      const entryPoint = ENTRY_POINT_ADDRESSES[Number(chainId) as keyof typeof ENTRY_POINT_ADDRESSES];
+      if (!entryPoint) {
+        return res.status(400).json({ error: 'Unsupported chain ID' });
+      }
+
+      res.json(entryPoint);
+    } catch (error) {
+      console.error('Error fetching entry point:', error);
+      res.status(500).json({ error: 'Failed to fetch entry point address' });
+    }
+  });
+
   // API routes for token prices and transaction history
   app.get('/api/tokens/prices', async (req, res) => {
     try {
@@ -110,7 +161,7 @@ export function registerRoutes(app: Express): Server {
       res.json(result);
     } catch (error) {
       console.error('Error sending UserOperation:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to send UserOperation',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -120,3 +171,11 @@ export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   return httpServer;
 }
+
+const ERC20_ABI = [{
+  name: 'balanceOf',
+  type: 'function',
+  stateMutability: 'view',
+  inputs: [{ name: 'account', type: 'address' }],
+  outputs: [{ name: 'balance', type: 'uint256' }]
+}] as const;

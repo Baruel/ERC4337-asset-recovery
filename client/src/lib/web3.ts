@@ -93,7 +93,7 @@ function serializeUserOp(userOp: any) {
     return hex.startsWith('0x') ? hex : `0x${hex}`;
   };
 
-  return {
+  const serialized = {
     sender: formatHex(userOp.sender),
     nonce: formatHex(userOp.nonce),
     initCode: formatHex(userOp.initCode),
@@ -106,6 +106,65 @@ function serializeUserOp(userOp: any) {
     paymasterAndData: formatHex(userOp.paymasterAndData),
     signature: formatHex(userOp.signature || '0x')
   };
+
+  // Validate all fields are properly formatted
+  Object.entries(serialized).forEach(([key, value]) => {
+    if (!value.startsWith('0x')) {
+      throw new Error(`Invalid ${key}: must start with 0x`);
+    }
+    if (key === 'sender' && value.length !== 42) {
+      throw new Error('Invalid sender address length');
+    }
+  });
+
+  return serialized;
+}
+
+async function signUserOp(userOp: any, chainId: number, entryPoint: string, privateKey: string) {
+  if (!privateKey) throw new Error('No private key available');
+
+  const formatHex = (value: bigint | string) => {
+    const hex = typeof value === 'bigint' ? value.toString(16) : value;
+    return hex.startsWith('0x') ? hex : `0x${hex}`;
+  };
+
+  // Pack the parameters in the correct order for EIP-4337
+  const packed = concat([
+    toBytes(formatHex(userOp.sender)),
+    toBytes(formatHex(userOp.nonce)),
+    toBytes(formatHex(userOp.initCode)),
+    toBytes(formatHex(userOp.callData)),
+    toBytes(formatHex(userOp.callGasLimit)),
+    toBytes(formatHex(userOp.verificationGasLimit)),
+    toBytes(formatHex(userOp.preVerificationGas)),
+    toBytes(formatHex(userOp.maxFeePerGas)),
+    toBytes(formatHex(userOp.maxPriorityFeePerGas)),
+    toBytes(formatHex(userOp.paymasterAndData))
+  ]);
+
+  // Add chain ID and entry point to the message
+  const message = concat([
+    toBytes(entryPoint),
+    toBytes(formatHex(BigInt(chainId))),
+    packed
+  ]);
+
+  // Hash the message
+  const userOpHash = keccak256(message);
+  console.log('Generated user operation hash:', userOpHash);
+
+  // Sign the hash
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const client = createWalletClient({
+    account,
+    chain: mainnet,
+    transport: http()
+  });
+
+  const signature = await client.signMessage({ message: { raw: toBytes(userOpHash) } });
+  console.log('Generated signature:', signature);
+
+  return signature;
 }
 
 // Helper to parse bundler error messages
@@ -135,46 +194,6 @@ function parseBundlerError(errorText: string): string {
 // Hook for sending transactions
 export function useSendTransaction() {
   const { privateKey, smartWalletAddress } = useWalletStore();
-
-  const signUserOp = async (userOp: any) => {
-    if (!privateKey) throw new Error('No private key available');
-
-    const formatHex = (value: bigint | string) => {
-      const hex = typeof value === 'bigint' ? value.toString(16) : value;
-      return hex.startsWith('0x') ? hex : `0x${hex}`;
-    };
-
-    // Pack the parameters in the correct order for EIP-4337
-    const packed = concat([
-      toBytes(formatHex(userOp.sender)),
-      toBytes(formatHex(userOp.nonce)),
-      toBytes(formatHex(userOp.initCode)),
-      toBytes(formatHex(userOp.callData)),
-      toBytes(formatHex(userOp.callGasLimit)),
-      toBytes(formatHex(userOp.verificationGasLimit)),
-      toBytes(formatHex(userOp.preVerificationGas)),
-      toBytes(formatHex(userOp.maxFeePerGas)),
-      toBytes(formatHex(userOp.maxPriorityFeePerGas)),
-      toBytes(formatHex(userOp.paymasterAndData))
-    ]);
-
-    // Hash the packed parameters
-    const userOpHash = keccak256(packed);
-    console.log('Generated user operation hash:', userOpHash);
-
-    // Sign the hash
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
-    const client = createWalletClient({
-      account,
-      chain: mainnet,
-      transport: http()
-    });
-
-    const signature = await client.signMessage({ message: { raw: toBytes(userOpHash) } });
-    console.log('Generated signature:', signature);
-
-    return signature;
-  };
 
   return {
     mutateAsync: async (values: {
@@ -210,24 +229,28 @@ export function useSendTransaction() {
           args: [values.recipient as `0x${string}`, BigInt(values.amount)]
         });
 
-        // Create UserOperation with properly formatted values
+        // Fetch the current nonce from the smart wallet contract
+        const nonce = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress}&chainId=${network.id}`).then(res => res.json());
+
+        // Create UserOperation with increased gas values
         const userOp = {
           sender: smartWalletAddress,
-          nonce: BigInt(0),
+          nonce: BigInt(nonce),
           initCode: '0x',
           callData,
-          callGasLimit: BigInt(100000),
-          verificationGasLimit: BigInt(100000),
-          preVerificationGas: BigInt(21000),
-          maxFeePerGas: BigInt(1000000000),
-          maxPriorityFeePerGas: BigInt(1000000000),
+          callGasLimit: BigInt(500000), // Increased from 100,000
+          verificationGasLimit: BigInt(500000), // Increased from 100,000
+          preVerificationGas: BigInt(50000), // Increased from 21,000
+          maxFeePerGas: BigInt(5000000000), // 5 GWEI
+          maxPriorityFeePerGas: BigInt(5000000000), // 5 GWEI
           paymasterAndData: '0x'
         };
 
-        console.log('Created user operation:', userOp);
+        // Get the entry point address for the current network
+        const entryPoint = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`).then(res => res.json());
 
-        // Sign the user operation
-        const signature = await signUserOp(userOp);
+        // Sign the user operation with chain ID and entry point
+        const signature = await signUserOp(userOp, network.id, entryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 
         // Serialize BigInt values before sending to API
