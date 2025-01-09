@@ -7,6 +7,41 @@ export class AlchemyBundlerProvider implements BundlerProvider {
     this.apiKey = config.apiKey;
   }
 
+  private validateUserOperation(userOp: UserOperation): void {
+    // Validate sender address
+    if (!userOp.sender?.match(/^0x[0-9a-fA-F]{40}$/)) {
+      throw new Error('Invalid sender address format');
+    }
+
+    // Validate nonce format
+    if (!userOp.nonce?.toString().match(/^0x[0-9a-fA-F]+$/)) {
+      throw new Error('Invalid nonce format');
+    }
+
+    // Validate gas parameters
+    const gasParams = [
+      'callGasLimit',
+      'verificationGasLimit',
+      'preVerificationGas',
+      'maxFeePerGas',
+      'maxPriorityFeePerGas'
+    ];
+
+    for (const param of gasParams) {
+      if (!userOp[param as keyof UserOperation]?.toString().match(/^0x[0-9a-fA-F]+$/)) {
+        throw new Error(`Invalid ${param} format`);
+      }
+    }
+
+    // Validate callData and other hex fields
+    const hexFields = ['initCode', 'callData', 'paymasterAndData', 'signature'];
+    for (const field of hexFields) {
+      if (!userOp[field as keyof UserOperation]?.toString().match(/^0x([0-9a-fA-F]*)?$/)) {
+        throw new Error(`Invalid ${field} format`);
+      }
+    }
+  }
+
   async sendUserOperation(userOp: UserOperation, entryPoint: string, chainId: number): Promise<any> {
     try {
       const chainPrefix = this.getChainPrefix(chainId);
@@ -16,14 +51,18 @@ export class AlchemyBundlerProvider implements BundlerProvider {
       console.log(`[Alchemy] EntryPoint: ${entryPoint}`);
       console.log(`[Alchemy] Chain Prefix: ${chainPrefix}`);
 
+      // Validate UserOperation before formatting
+      this.validateUserOperation(userOp);
+
+      // Format all numeric fields to hex
       const formattedUserOp = {
         ...userOp,
-        nonce: "0x" + userOp.nonce.toString(16),
-        callGasLimit: "0x" + userOp.callGasLimit.toString(16),
-        verificationGasLimit: "0x" + userOp.verificationGasLimit.toString(16),
-        preVerificationGas: "0x" + userOp.preVerificationGas.toString(16),
-        maxFeePerGas: "0x" + userOp.maxFeePerGas.toString(16),
-        maxPriorityFeePerGas: "0x" + userOp.maxPriorityFeePerGas.toString(16)
+        nonce: userOp.nonce.toString(16).startsWith('0x') ? userOp.nonce.toString(16) : '0x' + userOp.nonce.toString(16),
+        callGasLimit: userOp.callGasLimit.toString(16).startsWith('0x') ? userOp.callGasLimit.toString(16) : '0x' + userOp.callGasLimit.toString(16),
+        verificationGasLimit: userOp.verificationGasLimit.toString(16).startsWith('0x') ? userOp.verificationGasLimit.toString(16) : '0x' + userOp.verificationGasLimit.toString(16),
+        preVerificationGas: userOp.preVerificationGas.toString(16).startsWith('0x') ? userOp.preVerificationGas.toString(16) : '0x' + userOp.preVerificationGas.toString(16),
+        maxFeePerGas: userOp.maxFeePerGas.toString(16).startsWith('0x') ? userOp.maxFeePerGas.toString(16) : '0x' + userOp.maxFeePerGas.toString(16),
+        maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(16).startsWith('0x') ? userOp.maxPriorityFeePerGas.toString(16) : '0x' + userOp.maxPriorityFeePerGas.toString(16)
       };
 
       console.log(`[Alchemy] Formatted UserOperation:`, JSON.stringify(formattedUserOp, null, 2));
