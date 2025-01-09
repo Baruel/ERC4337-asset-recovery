@@ -8,10 +8,10 @@ import SendAssets from "@/components/SendAssets";
 import { useAccount } from "@/lib/web3";
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
+  const { address, smartWalletAddress, isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState("assets");
 
-  if (!isConnected || !address) {
+  if (!isConnected || !smartWalletAddress) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted p-4 flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -50,10 +50,10 @@ export default function Home() {
                 {address && <TokenList address={address} />}
               </TabsContent>
               <TabsContent value="send">
-                {address && <SendAssets address={address} />}
+                {smartWalletAddress && <SendAssets address={smartWalletAddress} />}
               </TabsContent>
               <TabsContent value="history">
-                {address && <TransactionHistory address={address} />}
+                {smartWalletAddress && <TransactionHistory address={smartWalletAddress} />}
               </TabsContent>
             </Tabs>
           </CardContent>

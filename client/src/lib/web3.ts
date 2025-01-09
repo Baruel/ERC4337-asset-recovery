@@ -19,7 +19,7 @@ interface WalletState {
   address: string | null;
   smartWalletAddress: string | null;
   privateKey: string | null;
-  connect: (privateKey: string) => Promise<void>;
+  connect: (privateKey: string, smartWalletAddress: string) => Promise<void>;
   disconnect: () => void;
 }
 
@@ -39,15 +39,13 @@ const useWalletStore = create<WalletState>((set) => ({
   address: null,
   smartWalletAddress: null,
   privateKey: null,
-  connect: async (privateKey: string) => {
+  connect: async (privateKey: string, smartWalletAddress: string) => {
     try {
       const account = privateKeyToAccount(privateKey as `0x${string}`);
-
-      // Don't set smartWalletAddress initially - it will be deployed on first transaction
       set({
         address: account.address,
-        privateKey,
-        smartWalletAddress: null
+        smartWalletAddress,
+        privateKey
       });
     } catch (error) {
       console.error('Failed to connect wallet:', error);
@@ -251,16 +249,11 @@ export function useSendTransaction() {
           args: [values.recipient as `0x${string}`, BigInt(values.amount)]
         });
 
-        // For first transaction, we need to deploy the smart wallet
-        let initCode = '0x';
-        if (!smartWalletAddress) {
-          console.log('Generating initCode for new smart wallet deployment...');
-          initCode = await generateInitCode(address, network.id);
-          console.log('Generated initCode:', initCode);
-        }
+        // Generate initCode if this is a new smart wallet
+        const initCode = !smartWalletAddress ? await generateInitCode(address, network.id) : '0x';
 
-        // Fetch the current nonce
-        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${address}&chainId=${network.id}`);
+        // Fetch the current nonce from the smart wallet contract
+        const nonceResponse = await fetch(`/api/smart-wallet/nonce?address=${smartWalletAddress || address}&chainId=${network.id}`);
         if (!nonceResponse.ok) {
           throw new Error('Failed to fetch nonce');
         }
@@ -268,9 +261,9 @@ export function useSendTransaction() {
         const nonce = BigInt((await nonceResponse.text()).trim());
         console.log('Using nonce:', nonce.toString());
 
-        // Create UserOperation
+        // Create UserOperation with increased gas values
         const userOp = {
-          sender: address,
+          sender: smartWalletAddress || address,
           nonce,
           initCode,
           callData,
@@ -292,7 +285,7 @@ export function useSendTransaction() {
           maxPriorityFeePerGas: userOp.maxPriorityFeePerGas.toString(),
         });
 
-        // Get the entry point address
+        // Get the entry point address for the current network
         const entryPointResponse = await fetch(`/api/smart-wallet/entry-point?chainId=${network.id}`);
         if (!entryPointResponse.ok) {
           throw new Error('Failed to fetch entry point address');
@@ -302,7 +295,7 @@ export function useSendTransaction() {
 
         console.log('Using entry point:', cleanEntryPoint);
 
-        // Sign the user operation
+        // Sign the user operation with chain ID and entry point
         const signature = await signUserOp(userOp, network.id, cleanEntryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 

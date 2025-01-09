@@ -33,42 +33,9 @@ interface TransactionErrorDisplayProps {
   };
 }
 
-function getHumanReadableError(error: string): { title: string; description: string } {
-  if (error.includes("sender is not a contract and initCode is empty")) {
-    return {
-      title: "Smart Wallet Not Deployed",
-      description: "Your smart wallet contract needs to be deployed first. This will happen automatically with your first transaction."
-    };
-  }
-  if (error.includes("insufficient funds")) {
-    return {
-      title: "Insufficient Funds",
-      description: "You don't have enough funds to pay for the transaction gas fees. Consider using a paymaster or adding more funds."
-    };
-  }
-  if (error.includes("invalid signature")) {
-    return {
-      title: "Invalid Signature",
-      description: "The transaction signature is invalid. This could happen if the wallet connection was lost or the private key changed."
-    };
-  }
-  if (error.includes("nonce")) {
-    return {
-      title: "Invalid Transaction Sequence",
-      description: "There was an issue with the transaction sequence number (nonce). Try refreshing the page and sending the transaction again."
-    };
-  }
-  // Default case
-  return {
-    title: "Transaction Failed",
-    description: "The transaction could not be processed. Please check the details below for more information."
-  };
-}
-
 export function TransactionErrorDisplay({ open, onClose, error }: TransactionErrorDisplayProps) {
   const { toast } = useToast();
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const humanReadableError = getHumanReadableError(error.message);
 
   const copyToClipboard = async (text: string, field: string) => {
     try {
@@ -90,38 +57,33 @@ export function TransactionErrorDisplay({ open, onClose, error }: TransactionErr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <XCircle className="h-5 w-5" />
-            {humanReadableError.title}
+            Transaction Failed
           </DialogTitle>
-          <div className="text-muted-foreground text-sm">
-            {humanReadableError.description}
-          </div>
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4 p-4">
-            <Accordion type="single" collapsible className="w-full">
-              {/* Raw Error Message */}
-              <AccordionItem value="error">
-                <AccordionTrigger>Technical Details</AccordionTrigger>
-                <AccordionContent>
-                  <div className="bg-destructive/10 p-4 rounded-lg border border-destructive/20 flex justify-between items-start">
-                    <p className="text-destructive font-medium">{error.message}</p>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => copyToClipboard(error.message, 'message')}
-                      className="h-8 w-8 flex-shrink-0"
-                    >
-                      {copiedField === 'message' ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
+            {/* Error Message Section */}
+            <div className="space-y-2">
+              <h3 className="font-semibold">Error Message</h3>
+              <div className="bg-destructive/10 p-4 rounded-lg border border-destructive/20 flex justify-between items-start">
+                <p className="text-destructive font-medium">{error.message}</p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => copyToClipboard(error.message, 'message')}
+                  className="h-8 w-8 flex-shrink-0"
+                >
+                  {copiedField === 'message' ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
 
+            <Accordion type="single" collapsible className="w-full">
               {/* Network Information */}
               {error.network && (
                 <AccordionItem value="network">
@@ -144,46 +106,30 @@ export function TransactionErrorDisplay({ open, onClose, error }: TransactionErr
               {/* User Operation */}
               {error.userOperation && (
                 <AccordionItem value="userOp">
-                  <AccordionTrigger>Transaction Details</AccordionTrigger>
+                  <AccordionTrigger>User Operation</AccordionTrigger>
                   <AccordionContent>
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Sender Address</p>
-                          <code className="text-xs bg-muted p-1 rounded">
-                            {error.userOperation.sender}
-                          </code>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">Nonce</p>
-                          <code className="text-xs bg-muted p-1 rounded">
-                            {error.userOperation.nonce}
-                          </code>
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm font-mono">
-                          {JSON.stringify(error.userOperation, null, 2)}
-                        </pre>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => copyToClipboard(JSON.stringify(error.userOperation, null, 2), 'userOp')}
-                          className="absolute top-2 right-2"
-                        >
-                          {copiedField === 'userOp' ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
+                    <div className="relative">
+                      <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm font-mono">
+                        {JSON.stringify(error.userOperation, null, 2)}
+                      </pre>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => copyToClipboard(JSON.stringify(error.userOperation, null, 2), 'userOp')}
+                        className="absolute top-2 right-2"
+                      >
+                        {copiedField === 'userOp' ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
               )}
 
-              {/* Raw Error Response */}
+              {/* Raw Error */}
               {error.rawError && (
                 <AccordionItem value="rawError">
                   <AccordionTrigger>Raw Error Response</AccordionTrigger>
