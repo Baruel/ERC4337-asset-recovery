@@ -186,36 +186,47 @@ function parseErrorStack(error: Error): { file: string; line: number; column?: n
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
+// Helper to parse bundler error messages
+function parseBundlerError(errorText: string): string {
+  try {
+    const parsed = JSON.parse(errorText);
+    if (parsed.error?.details) {
+      try {
+        const nestedError = JSON.parse(parsed.error.details);
+        if (nestedError.error?.message) {
+          return nestedError.error.message;
+        }
+      } catch (e) {
+        // If nested parsing fails, use the outer error
+        return parsed.error.details;
+      }
+    }
+    if (parsed.error?.message) {
+      return parsed.error.message;
+    }
+    return errorText;
+  } catch (e) {
+    return errorText;
+  }
+}
+
 // Enhanced error handling for transaction errors
-function formatTransactionError(error: any, userOp?: any, network?: any) {
-  const errorObj: any = {
-    message: error.message || 'Unknown error occurred',
-    userOperation: userOp,
-    network,
-    endpoint: '/api/send-user-operation',
-    rawError: error.toString()
+function formatTransactionError(error: any, context: Record<string, any> = {}) {
+  const errorResponse = {
+    error: 'Failed to send UserOperation',
+    message: error instanceof Error ? error.message : 'Unknown error',
+    details: error instanceof Error ? error.stack : JSON.stringify(error),
+    timestamp: new Date().toISOString(),
+    context
   };
 
-  // Add stack trace if available
-  if (error instanceof Error) {
-    errorObj.stackTrace = error.stack;
-    errorObj.fileInfo = parseErrorStack(error);
-  }
+  // Log detailed error information for debugging
+  console.error('Error details:', {
+    ...errorResponse,
+    originalError: error
+  });
 
-  // Parse bundler error response if available
-  if (error.rawError) {
-    try {
-      const parsedError = JSON.parse(error.rawError);
-      errorObj.message = parsedError.message || parsedError.error?.message || error.message;
-      if (parsedError.details) {
-        errorObj.rawError = parsedError.details;
-      }
-    } catch (e) {
-      console.warn('Failed to parse bundler error:', e);
-    }
-  }
-
-  return errorObj;
+  return errorResponse;
 }
 
 // Hook for sending transactions
@@ -229,29 +240,30 @@ export function useSendTransaction() {
       network: string;
       token: string;
     }) => {
+      let selectedNetwork;
       try {
         if (!privateKey || !address) {
           throw new Error('Wallet not connected');
         }
 
         // Find the selected network
-        const network = SUPPORTED_NETWORKS.find(n => n.name === values.network);
-        if (!network) {
+        selectedNetwork = SUPPORTED_NETWORKS.find(n => n.name === values.network);
+        if (!selectedNetwork) {
           throw new Error('Network not supported');
         }
 
         const sender = smartWalletAddress || address;
 
         // Check if the wallet is deployed
-        const isDeployed = await verifyDeployment(sender, network.id);
-        console.log('Wallet deployment status:', { isDeployed, sender, chainId: network.id });
+        const isDeployed = await verifyDeployment(sender, selectedNetwork.id);
+        console.log('Wallet deployment status:', { isDeployed, sender, chainId: selectedNetwork.id });
 
         // Generate initCode if wallet is not deployed
-        const initCode = !isDeployed ? await generateInitCode(address, network.id) : '0x';
+        const initCode = !isDeployed ? await generateInitCode(address, selectedNetwork.id) : '0x';
         console.log('InitCode:', initCode);
 
         // Get the current nonce
-        const nonce = await fetchNonce(sender, network.id);
+        const nonce = await fetchNonce(sender, selectedNetwork.id);
 
         // Create the user operation
         const userOp = {
@@ -282,8 +294,8 @@ export function useSendTransaction() {
         };
 
         // Get entry point and sign the operation
-        const entryPoint = await fetchEntryPoint(network.id);
-        const signature = await signUserOp(userOp, network.id, entryPoint, privateKey);
+        const entryPoint = await fetchEntryPoint(selectedNetwork.id);
+        const signature = await signUserOp(userOp, selectedNetwork.id, entryPoint, privateKey);
         const signedUserOp = { ...userOp, signature };
 
         // Serialize the operation before sending
@@ -298,7 +310,7 @@ export function useSendTransaction() {
           },
           body: JSON.stringify({
             userOp: serializedUserOp,
-            chainId: network.id
+            chainId: selectedNetwork.id
           })
         });
 
@@ -316,38 +328,15 @@ export function useSendTransaction() {
       } catch (error) {
         console.error('Transaction error:', error);
         throw formatTransactionError(error, {
-          network: {
-            name: network?.name,
-            chainId: network?.id
-          }
+          network: selectedNetwork ? {
+            name: selectedNetwork.name,
+            chainId: selectedNetwork.id
+          } : undefined,
+          timestamp: new Date().toISOString()
         });
       }
     }
   };
-}
-
-// Helper to parse bundler error messages
-function parseBundlerError(errorText: string): string {
-  try {
-    const parsed = JSON.parse(errorText);
-    if (parsed.error?.details) {
-      try {
-        const nestedError = JSON.parse(parsed.error.details);
-        if (nestedError.error?.message) {
-          return nestedError.error.message;
-        }
-      } catch (e) {
-        // If nested parsing fails, use the outer error
-        return parsed.error.details;
-      }
-    }
-    if (parsed.error?.message) {
-      return parsed.error.message;
-    }
-    return errorText;
-  } catch (e) {
-    return errorText;
-  }
 }
 
 // Add the verifyUserOperation function

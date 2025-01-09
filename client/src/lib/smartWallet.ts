@@ -3,10 +3,10 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import { estimateDeploymentGas, trackDeployment, verifyDeployment } from './deployment';
 
-// Constants for Account Abstraction
+// Constants for Account Abstraction with updated Polygon factory
 export const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
-  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Updated Polygon factory address
+  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Polygon-specific factory
   42161: '0x9406Cc6185a346906296840746125a0E44976454',
   10: '0x9406Cc6185a346906296840746125a0E44976454',
   8453: '0x9406Cc6185a346906296840746125a0E44976454',

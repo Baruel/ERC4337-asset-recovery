@@ -36,10 +36,10 @@ const ENTRY_POINT_ADDRESSES = {
   56: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 };
 
-// Constants for Account Abstraction
+// Constants for Account Abstraction with updated Polygon factory
 const SIMPLE_ACCOUNT_FACTORY = {
   1: '0x9406Cc6185a346906296840746125a0E44976454',
-  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Updated Polygon factory address
+  137: '0xE77f2C7D79B2743d39Ad73DC47a8e9C6416aD3f3', // Polygon-specific factory
   42161: '0x9406Cc6185a346906296840746125a0E44976454',
   10: '0x9406Cc6185a346906296840746125a0E44976454',
   8453: '0x9406Cc6185a346906296840746125a0E44976454',
@@ -59,6 +59,15 @@ const FACTORY_ABI = [{
   name: 'getAddress',
   outputs: [{ name: 'ret', type: 'address' }],
   stateMutability: 'view',
+  type: 'function'
+}, {
+  inputs: [
+    { name: 'owner', type: 'address' },
+    { name: 'salt', type: 'uint256' }
+  ],
+  name: 'createAccount',
+  outputs: [{ name: 'ret', type: 'address' }],
+  stateMutability: 'nonpayable',
   type: 'function'
 }] as const;
 
@@ -284,6 +293,7 @@ export function registerRoutes(app: Express): Server {
         throw new Error(`No entry point address for chain ID: ${chainId}`);
       }
 
+      // Enhanced logging for debugging
       console.log(`Sending UserOperation to network ${chainId} via Alchemy bundler`);
       console.log('UserOperation:', JSON.stringify(userOp, null, 2));
       console.log('Factory Address:', factoryAddress);
